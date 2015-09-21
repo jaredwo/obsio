@@ -2,14 +2,14 @@
 obsio
 ##########
 
-obsio is an Python package that provides a consistent generic interface for
+**obsio** is an Python package that provides a consistent generic interface for
 accessing weather and climate observations from multiple different data 
 providers. All station and observation data are returned using pandas data
-structures. obsio is currently in pre-alpha stage and undergoing active development.
+structures. **obsio** is currently in pre-alpha stage and undergoing active development.
 
 Installation
 =============
-obsio has the following dependencies:
+**obsio** has the following dependencies:
 
 * lxml_
 * netCDF4_
@@ -25,7 +25,7 @@ obsio has the following dependencies:
 The easiest method to install the required dependencies is with a combination
 of conda_ and pip_:
 
-.. code-block: bash
+::
 
 	conda create -n obsio_env python=2 lxml ipython netCDF4 numpy pandas pycurl pytz scipy xray
 	pip install suds
@@ -33,7 +33,7 @@ of conda_ and pip_:
 
 And then install obsio from source:
 
-.. code-block: bash
+::
 
 	python setup.py install
 
@@ -52,7 +52,7 @@ And then install obsio from source:
 
 Available Data Providers
 =============
-obsio currently has full or partial support for a number of climate and
+**obsio** currently has full or partial support for a number of climate and
 weather data providers. obsio distinguishes between two main types of providers:
 (1) providers that supply direct data access via web services; and (2) those
 that supply data through FTP-type access where data must first be downloaded
@@ -62,11 +62,11 @@ time, but hourly and sub-hourly can easily be added.
 ============= ============================================ =================== 
 Provider Name Currently Supported Elements                 Req. Local Storage?
 ============= ============================================ ===================
-ACIS_		  tmin,tmax,prcp,tobs_tmin,tobs_tmax,tobs_prcp No
+ACIS_	      tmin,tmax,prcp,tobs_tmin,tobs_tmax,tobs_prcp No
 ISDLite_      tmin,tmax,tdew                               Yes
 GHCN-D_       tmin,tmax,prcp,tobs_tmin,tobs_tmax,tobs_prcp Yes
 MADIS_        tmin,tmax,prcp,tdew,prcp,srad,wspd           Yes
-NRCS_		  tmin,tmax,prcp,snwd,swe                      No
+NRCS_         tmin,tmax,prcp,snwd,swe                      No
 ============= ============================================ ===================
 
 Element definitions:
@@ -91,11 +91,11 @@ Element definitions:
 
 Usage
 =============
-The main entry point for using obsio is through ObsIoFactory. ObIoFactory is
-used to build ObsIO objects for accessing station metadata and observations
+The main entry point for using **obsio** is through **ObsIoFactory**. **ObIoFactory** is
+used to build **ObsIO** objects for accessing station metadata and observations
 from specific providers.
 
-.. code-block: python
+::
 
 	# Example code for accessing NRCS SNOTEL/SCAN observations in the Pacific
 	# Northwest for January 2015
@@ -128,21 +128,21 @@ from specific providers.
 	obs = nrcs_io.read_obs()
 	
 	# Observations are provided in a pandas DataFrame. Observation values are 
-	indexed by a 3 level multi-index: station_id, elem, time
+	# indexed by a 3 level multi-index: station_id, elem, time
 	print obs
 	
 	# To access observations for only a few specific stations, send in a list
 	# of station ids to read_obs()
 	obs = nrcs_io.read_obs(['11E07S', '11E31S'])
 
-In contrast to the NRCS SNOTEL/SCAN example, some ObsIO provider objects
+In contrast to the NRCS SNOTEL/SCAN example, some **ObsIO** provider objects
 require all observation data to first be downloaded and stored locally, and
 then parsed (see provider table above). The data directory for local storage
 can be pre-specified in a 'OBSIO_DATA' environmental variable or specified
-as a parameter when creating the ObsIO object. If no directory is specified,
+as a parameter when creating the **ObsIO** object. If no directory is specified,
 obsio will default to a standard temporary directory. Example:
 
-.. code-block: python
+::
 
 	# Example code for accessing GHCN-D observations in the Pacific
 	# Northwest for January 2015. GHCN-D is a data provider that requires
