@@ -187,24 +187,34 @@ class GhcndObsIO(ObsIO):
     def download_local(self):
 
         local_path = self.path_ghcnd_data
-
+        
+        print "Downloading ghcnd-version.txt..."
         subprocess.call(['wget', '-N', '--directory-prefix=' + local_path,
-                         urljoin(_RPATH_GHCND, 'ghcnd-version.txt')])
-
+                         '--no-verbose', urljoin(_RPATH_GHCND,
+                                                 'ghcnd-version.txt')])
+        
+        print "Downloading status.txt..."
         subprocess.call(['wget', '-N', '--directory-prefix=' + local_path,
-                         urljoin(_RPATH_GHCND, 'status.txt')])
-
+                         '--no-verbose', urljoin(_RPATH_GHCND, 'status.txt')])
+        
+        print "Downloading readme.txt..."
         subprocess.call(['wget', '-N', '--directory-prefix=' + local_path,
-                         urljoin(_RPATH_GHCND, 'readme.txt')])
-
+                         '--no-verbose', urljoin(_RPATH_GHCND, 'readme.txt')])
+        
+        print "Downloading ghcnd-inventory.txt..."
         subprocess.call(['wget', '-N', '--directory-prefix=' + local_path,
-                         urljoin(_RPATH_GHCND, 'ghcnd-inventory.txt')])
+                         '--no-verbose', urljoin(_RPATH_GHCND,
+                                                 'ghcnd-inventory.txt')])
 
+        print "Downloading ghcnd-stations.txt..."
         subprocess.call(['wget', '-N', '--directory-prefix=' + local_path,
-                         urljoin(_RPATH_GHCND, 'ghcnd-stations.txt')])
-
+                         '--no-verbose', urljoin(_RPATH_GHCND,
+                                                 'ghcnd-stations.txt')])
+        
+        print "Downloading ~3.0GB ghcnd_all.tar.gz..."
         subprocess.call(['wget', '-N', '--directory-prefix=' + local_path,
-                         urljoin(_RPATH_GHCND, 'ghcnd_all.tar.gz')])
+                         '--no-verbose', urljoin(_RPATH_GHCND,
+                                                 'ghcnd_all.tar.gz')])
 
         print "Unzipping ghcnd_all.tar.gz..."
         subprocess.call(['gunzip', '-f',
@@ -217,6 +227,7 @@ class GhcndObsIO(ObsIO):
 
         print "Downloading yearly files..."
         subprocess.call(['wget', '-N', '--directory-prefix=' + by_yr_dir,
+                         '--no-verbose',
                          urljoin(_RPATH_GHCND, 'by_year/*.csv.gz')])
 
     def _parse_stn_obs(self, stn_id):
