@@ -187,7 +187,7 @@ class ObsIoFactory(object):
             should be loaded to cover the local calendar date(s) specified by
             the factory's date range (e.g. ['US/Mountain','US/Eastern']). If
             not provided, will default to loading MADIS UTC hourly files that
-            cover the local calendar dates of all conterminous U.S. time zones.
+            cover the local calendar dates of all global time zones.
         fname_tz_geonames : str, optional
             Geonames username. If provided, station time zone information that
             cannot be determined locally via the python tzwhere package

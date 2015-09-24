@@ -15,18 +15,11 @@ import numpy as np
 import os
 import pandas as pd
 import pycurl
+import pytz
 import subprocess
 import sys
 import tempfile
 import xray
-
-_TZ_CONUS = ['US/Alaska', 'US/Arizona',
-             'US/Central', 'US/Eastern',
-             'US/Hawaii', 'US/Mountain',
-             'US/Pacific', 'Canada/Atlantic',
-             'Canada/Central', 'Canada/Eastern',
-             'Canada/Mountain', 'Canada/Newfoundland',
-             'Canada/Pacific']
 
 _URL_BASE_MADIS = 'https://madis-data.ncep.noaa.gov/madisResearch/data/'
 
@@ -977,7 +970,7 @@ class _MultiElem(_DailyElem):
         return all_obs
 
 
-def _get_utc_hours(start_date, end_date, tzs=_TZ_CONUS):
+def _get_utc_hours(start_date, end_date, tzs):
 
     end_date = end_date + timedelta(days=1)
 
@@ -1343,7 +1336,7 @@ class MadisObsIO(ObsIO):
             end_date = pd.Timestamp.now()
 
         local_time_zones = (local_time_zones if local_time_zones
-                            else _TZ_CONUS)
+                            else pytz.all_timezones)
         self._utc_hrs = _get_utc_hours(start_date, end_date, local_time_zones)
         self._dates = pd.date_range(start_date, end_date, freq='D')
         self._dly_elem = _MultiElem(self.elems, self.min_hrly_for_dly)
