@@ -731,13 +731,6 @@ class _Srad(_DailyElem):
         # observation requirements
         srad = obs_avg['solarRadiation'][mask_nhrs]
 
-        try:
-            # Remove invalid srad values == 0
-            srad = srad[srad > 0].copy()
-        except ValueError:
-            # srad is empty even before masking
-            pass
-
         if srad.empty:
 
             df_out = pd.DataFrame(columns=['obs_value', 'elem', 'time'])
