@@ -1,5 +1,17 @@
 from time import sleep
+
+# tzwhere currently sets log level to debug when imported
+# get log level before import and then reset log level to this
+# value after tzwhere import
+
+import logging
+logger = logging.getLogger()
+log_level = logger.level
+
 from tzwhere.tzwhere import tzwhere
+
+logger.setLevel(log_level)
+
 import json
 import numpy as np
 import urllib
