@@ -119,8 +119,11 @@ def _madis_file_to_df(fpath, dly_elem, bbox):
             os.remove(fpath_tmp)
 
         else:
-            raise e
-
+            raise
+    
+    if df.empty:
+        print "Warning: File does not appear to have any valid data: "+fpath
+    
     return df
 
 
@@ -179,9 +182,18 @@ class _DailyElem(object):
     def _set_nan(self, df, mask, vname):
 
         try:
+            
             df.loc[mask, vname] = np.nan
+        
         except KeyError:
+        
             pass
+        
+        except ValueError as e:
+            
+            nodata_msg = 'cannot set a frame with no defined index and a scalar'
+            if e.args[0].strip() != nodata_msg:
+                raise
 
 
 class _Tmin(_DailyElem):
