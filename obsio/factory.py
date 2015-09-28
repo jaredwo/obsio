@@ -138,10 +138,10 @@ class ObsIoFactory(object):
                           start_date=self.start_date,
                           end_date=self.end_date)
 
-    def create_obsio_dly_madis(self, local_data_path=None, username=None,
-                               password=None, madis_datasets=None,
-                               local_time_zones=None, fname_tz_geonames=None,
-                               min_hrly_for_dly=None,
+    def create_obsio_dly_madis(self, local_data_path=None, data_version=None,
+                               username=None, password=None,
+                               madis_datasets=None, local_time_zones=None,
+                               fname_tz_geonames=None, min_hrly_for_dly=None,
                                nprocs=1):
         """Create ObsIO to access daily observations from MADIS.
 
@@ -167,10 +167,24 @@ class ObsIoFactory(object):
             files. If not specified, will use and create a MADIS directory in
             the path specified by the OBSIO_DATA environmental variable. If
             OBSIO_DATA is not set, a default temporary path will be used.
+        data_version : str, optional
+            MADIS dataset version (public, research, noaa-only, etc.) Some
+            dataset versions are restricted and require a username and
+            password (see https://madis.noaa.gov/madis_restrictions.shtml).
+            Currently available data versions:
+            - 'madisPublic1'
+            - 'madisPublic2'
+            - 'madisPublic3'
+            - 'madisResearch'
+            - 'madisResearch2'
+            - 'madisNoaa'
+            - 'madisGov'
+            If not specified, the MADIS dataset version will be set to
+            'madisPublic1'.            
         username : str, optional
-            MADIS username for accessing restricted datasets (e.g.--mesonets)
+            MADIS username for accessing a restricted data version
         password : str, optional
-            MADIS password for accessing restricted datasets (e.g.--mesonets)
+            MADIS password for accessing restricted data version
         madis_datasets: list, optional
             MADIS datasets to access. Currently supported datasets:
             - 'LDAD/mesonet/netCDF'
@@ -217,6 +231,7 @@ class ObsIoFactory(object):
         """
 
         return MadisObsIO(local_data_path=local_data_path,
+                          data_version=data_version,
                           username=username, password=password,
                           madis_datasets=madis_datasets,
                           local_time_zones=local_time_zones,

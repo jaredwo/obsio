@@ -21,7 +21,7 @@ import sys
 import tempfile
 import xray
 
-_URL_BASE_MADIS = 'https://madis-data.ncep.noaa.gov/madisResearch/data/'
+_URL_BASE_MADIS = 'https://madis-data.ncep.noaa.gov/%s/data/'
 
 _MADIS_SFC_DATASETS = ['LDAD/mesonet/netCDF', 'point/metar/netcdf',
                        'LDAD/coop/netCDF', 'LDAD/crn/netCDF',
@@ -1270,8 +1270,8 @@ class MadisObsIO(ObsIO):
     _MIN_HRLY_FOR_DLY_DFLT = {'tmin': 20, 'tmax': 20, 'tdew': 4, 'srad': 24,
                               'prcp': 24, 'wspd': 24}
 
-    def __init__(self, local_data_path=None, username=None, password=None,
-                 madis_datasets=None, local_time_zones=None,
+    def __init__(self, local_data_path=None, data_version=None, username=None,
+                 password=None, madis_datasets=None, local_time_zones=None,
                  fname_tz_geonames=None, min_hrly_for_dly=None, nprocs=1,
                  **kwargs):
 
@@ -1279,6 +1279,7 @@ class MadisObsIO(ObsIO):
 
         self.local_data_path = (local_data_path if local_data_path
                                 else LOCAL_DATA_PATH)
+        self.data_version = (data_version if data_version else 'madisPublic1')
         self.madis_datasets = (madis_datasets if madis_datasets
                                else _MADIS_SFC_DATASETS)
         self.min_hrly_for_dly = (min_hrly_for_dly if min_hrly_for_dly
@@ -1299,11 +1300,20 @@ class MadisObsIO(ObsIO):
         self._fname_tz_geonames = fname_tz_geonames
         self._username = username
         self._password = password
+        self._url_base_madis = _URL_BASE_MADIS%self.data_version
         self.nprocs = nprocs
-        self.path_madis_data = os.path.join(self.local_data_path, 'MADIS')
         
-        if not os.path.isdir(self.path_madis_data):
-            os.mkdir(self.path_madis_data)
+        path_madis_data = os.path.join(self.local_data_path, 'MADIS')
+                
+        if not os.path.isdir(path_madis_data):
+            os.mkdir(path_madis_data)
+        
+        path_madis_data = os.path.join(path_madis_data, self.data_version)
+        
+        if not os.path.isdir(path_madis_data):
+            os.mkdir(path_madis_data)
+            
+        self.path_madis_data = path_madis_data
         
         self._fpath_stns_cache = os.path.join(self.path_madis_data,
                                               'stns_cache.pkl')
@@ -1544,7 +1554,8 @@ class MadisObsIO(ObsIO):
                     c = pycurl.Curl()
                     c.setopt(pycurl.WRITEDATA, buf)
                     c.setopt(pycurl.URL, url)
-                    c.setopt(pycurl.USERPWD, "%s:%s" % (usrname, passwd))
+                    if usrname and passwd:
+                        c.setopt(pycurl.USERPWD, "%s:%s" % (usrname, passwd))
                     c.setopt(pycurl.SSL_VERIFYPEER, 0)
                     c.setopt(pycurl.FAILONERROR, True)
                     c.setopt(pycurl.FOLLOWLOCATION, 1)
@@ -1577,15 +1588,23 @@ class MadisObsIO(ObsIO):
         def _wget_madis_file(url, path_local, usrname, passwd):
 
             print "WGET: Downloading %s to %s..." % (url, path_local)
-
-            subprocess.call(['wget', '-N', '--no-check-certificate', '--quiet',
-                             '--user=%s' % usrname, '--password=%s' % passwd,
-                             url, '-P%s' % path_local])
+            
+            if usrname and passwd:
+            
+                subprocess.call(['wget', '-N', '--no-check-certificate', '--quiet',
+                                 '--user=%s' % usrname, '--password=%s' % passwd,
+                                 url, '-P%s' % path_local])
+                
+            else:
+                
+                subprocess.call(['wget', '-N', '--no-check-certificate',
+                                 '--quiet', url, '-P%s' % path_local])
+                
 
         for a_dspath in self.madis_datasets:
 
             # Get list of realtime files for this dataset
-            rt_fnames = _get_madis_file_list(_url_path_join(_URL_BASE_MADIS,
+            rt_fnames = _get_madis_file_list(_url_path_join(self._url_base_madis,
                                                             a_dspath),
                                              self._username, self._password)
 
@@ -1596,7 +1615,7 @@ class MadisObsIO(ObsIO):
                 yr, mth, day = a_day
                 syr, smth, sday = "%d" % yr, "%.2d" % mth, "%.2d" % day
                 url_archive_fnames = _url_path_join(
-                    _URL_BASE_MADIS, 'archive', syr, smth, sday, a_dspath)
+                    self._url_base_madis, 'archive', syr, smth, sday, a_dspath)
 
                 try:
 
@@ -1637,7 +1656,7 @@ class MadisObsIO(ObsIO):
 
                     for a_fname in avail_archive_fnames:
 
-                        url = _url_path_join(_URL_BASE_MADIS, 'archive', syr,
+                        url = _url_path_join(self._url_base_madis, 'archive', syr,
                                              smth, sday, a_dspath, a_fname)
                         _wget_madis_file(url, path_local, self._username,
                                          self._password)
@@ -1645,7 +1664,7 @@ class MadisObsIO(ObsIO):
                     for a_fname in avail_rt_fnames:
 
                         url = _url_path_join(
-                            _URL_BASE_MADIS, a_dspath, a_fname)
+                            self._url_base_madis, a_dspath, a_fname)
                         _wget_madis_file(url, path_local, self._username,
                                          self._password)
 
