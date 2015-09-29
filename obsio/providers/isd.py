@@ -25,8 +25,7 @@ class IsdLiteObsIO(ObsIO):
 
     min_hrly_for_dly_DFLT = {'tmin': 20, 'tmax': 20, 'tdew': 4}
 
-    def __init__(self, local_data_path=None, min_hrly_for_dly=None,
-                 fname_tz_geonames=None, **kwargs):
+    def __init__(self, local_data_path=None, min_hrly_for_dly=None, **kwargs):
 
         super(IsdLiteObsIO, self).__init__(**kwargs)
 
@@ -37,7 +36,6 @@ class IsdLiteObsIO(ObsIO):
         if not os.path.isdir(self.path_isd_data):
             os.mkdir(self.path_isd_data)
         
-        self._fname_tz_geonames = fname_tz_geonames
         self.min_hrly_for_dly = (min_hrly_for_dly if min_hrly_for_dly
                                  else self.min_hrly_for_dly_DFLT)
         # check to make sure there is an entry in min_hrly_for_dly for each
@@ -131,7 +129,7 @@ class IsdLiteObsIO(ObsIO):
 
         if self._a_tz is None:
 
-            self._a_tz = TimeZones(self._fname_tz_geonames)
+            self._a_tz = TimeZones()
 
         return self._a_tz
 

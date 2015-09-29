@@ -141,8 +141,7 @@ class ObsIoFactory(object):
     def create_obsio_dly_madis(self, local_data_path=None, data_version=None,
                                username=None, password=None,
                                madis_datasets=None, local_time_zones=None,
-                               fname_tz_geonames=None, min_hrly_for_dly=None,
-                               nprocs=1):
+                               min_hrly_for_dly=None, nprocs=1):
         """Create ObsIO to access daily observations from MADIS.
 
         MADIS (Meteorological Assimilation Data Ingest System) is a 
@@ -202,14 +201,6 @@ class ObsIoFactory(object):
             the factory's date range (e.g. ['US/Mountain','US/Eastern']). If
             not provided, will default to loading MADIS UTC hourly files that
             cover the local calendar dates of all global time zones.
-        fname_tz_geonames : str, optional
-            Geonames username. If provided, station time zone information that
-            cannot be determined locally via the python tzwhere package
-            will be looked up in the geonames time zone web service. If the
-            time zone of a station point still can't be determined, the time zone
-            of the nearest neighboring station with a time zone will be used.
-            Time zone location information only needs to be looked up once
-            per station and will then be cached in the MADIS local data directory.
         min_hrly_for_dly : dict, optional
             The number of hourly observations required to calculate a daily
             value for each element, e.g: {'tmin':20,'tmax':20,'tdew':4}. If
@@ -235,14 +226,13 @@ class ObsIoFactory(object):
                           username=username, password=password,
                           madis_datasets=madis_datasets,
                           local_time_zones=local_time_zones,
-                          fname_tz_geonames=fname_tz_geonames,
                           min_hrly_for_dly=min_hrly_for_dly,
                           elems=self.elems, bbox=self.bbox,
                           start_date=self.start_date, end_date=self.end_date,
                           nprocs=nprocs)
 
     def create_obsio_dly_isdlite(self, local_data_path=None,
-                                 min_hrly_for_dly=None, fname_tz_geonames=None):
+                                 min_hrly_for_dly=None):
         """Create ObsIO to access daily observations from NCEI's ISD-Lite.
 
         NOAA's National Centers for Environmental Information (NCEI)
@@ -272,14 +262,6 @@ class ObsIoFactory(object):
             - 'tmin' : 20
             - 'tmax' : 20
             - 'tdew' : 4
-        fname_tz_geonames : str, optional
-            Geonames username. If provided, station time zone information that
-            cannot be determined locally via the python tzwhere package
-            will be looked up in the geonames time zone web service. If the
-            time zone of a station point still can't be determined, the time zone
-            of the nearest neighboring station with a time zone will be used.
-            Time zone location information only needs to be looked up once
-            per station and will then be cached in the ISD-Lite local data directory.
 
         Returns
         ----------
@@ -288,7 +270,6 @@ class ObsIoFactory(object):
 
         return IsdLiteObsIO(local_data_path=local_data_path,
                             min_hrly_for_dly=min_hrly_for_dly,
-                            fname_tz_geonames=fname_tz_geonames,
                             elems=self.elems, bbox=self.bbox,
                             start_date=self.start_date,
                             end_date=self.end_date)

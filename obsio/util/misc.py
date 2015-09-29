@@ -1,21 +1,15 @@
-from time import sleep
+import logging
+import numpy as np
 
 # tzwhere currently sets log level to debug when imported
 # get log level before import and then reset log level to this
 # value after tzwhere import
-
-import logging
 logger = logging.getLogger()
 log_level = logger.level
 
 from tzwhere.tzwhere import tzwhere
 
 logger.setLevel(log_level)
-
-import json
-import numpy as np
-import urllib
-import urllib2
 
 _RADIAN_CONVERSION_FACTOR = 0.017453292519943295 #pi/180
 _AVG_EARTH_RADIUS_KM = 6371.009 #Mean earth radius as defined by IUGG
@@ -47,18 +41,22 @@ class BBox(object):
 
 class TimeZones():
     
-    def __init__(self, fname_geonames=None):
+    _tzw = None
+    
+    def __init__(self):
         
-        print "Initializing TimeZones..."
-        self.tzw = tzwhere()
-        
-        if fname_geonames is not None:
-        
-            self.tzgeo = TZGeonamesClient(fname_geonames)
-        
-        else:
+        pass
+    
+    @property
+    def tzw(self):
+
+        if TimeZones._tzw is None:
             
-            self.tzgeo = None
+            print "Initializing tzwhere for time zone retrieval...",
+            TimeZones._tzw = tzwhere(shapely=True, forceTZ=True)
+            print 'done.'
+
+        return TimeZones._tzw
     
     def set_tz(self, df_stns, chck_nghs=True):
         
@@ -76,41 +74,12 @@ class TimeZones():
             
             tz_for_null = df_stns_notz.apply(lambda x: 
                                           self.tzw.tzNameAt(x.latitude,
-                                                            x.longitude), 1)
+                                                            x.longitude,
+                                                            forceTZ=True), 1)
+            
             df_stns.loc[mask_tznull,'time_zone'] = tz_for_null.values
         
             mask_tznull = df_stns['time_zone'].isnull()
-    
-            if mask_tznull.any() and self.tzgeo:
-        
-                print ("Could not locally determine timezone for %d stations. "
-                       "Trying geonames..." % (mask_tznull.sum(),))
-        
-                def get_tz_geo(a_row):
-                                        
-                    i = 0
-        
-                    while i < 2:
-        
-                        try:
-        
-                            return (self.tzgeo.find_timezone(a_row.longitude,
-                                                            a_row.latitude)
-                                    ['timezoneId'])
-        
-                        except (GeonamesError, KeyError):
-        
-                            sleep(5)
-        
-                        i += 1
-        
-                    return None
-        
-                df_stns_tznull = df_stns[mask_tznull]
-                tz_for_null = df_stns_tznull.apply(get_tz_geo, 1)
-                df_stns.loc[mask_tznull,'time_zone'] = tz_for_null.values
-        
-                mask_tznull = df_stns['time_zone'].isnull()
         
             if mask_tznull.any() and chck_nghs:
     
@@ -136,76 +105,6 @@ class TimeZones():
                 tz_for_null = df_stns_tznull.apply(ngh_tz, 1)
                 df_stns.loc[mask_tznull,'time_zone'] = tz_for_null.values
                     
-class GeonamesError(Exception):
-    '''
-    Represents an error when retrieving time zone
-    information from the Geonames data web service
-    Written by: https://gist.github.com/pamelafox/2288222.
-    '''
-
-    def __init__(self, status):
-        Exception.__init__(self, status)
-        self.status = status
-
-    def __str__(self):
-        return self.status
-
-    def __unicode__(self):
-        return unicode(self.__str__())
-
-class TZGeonamesClient(object):
-    '''
-    Class for retrieving time zone information for a specific
-    point from the Geonames data web service.
-    Written by: https://gist.github.com/pamelafox/2288222.
-    '''
-
-    BASE_URL = 'http://api.geonames.org/'
-
-    def __init__(self, username):
-        '''
-        Parameters
-        ----------
-        username : str
-            A geonames username
-        '''
-
-        self.username = username
-
-    def __call(self, service, params=None):
-
-        url = self.__build_url(service, params)
-
-        try:
-            response = urllib2.urlopen(urllib2.Request(url))
-            json_response = json.loads(response.read())
-        except urllib2.URLError:
-            raise GeonamesError('API didnt return 200 response.')
-        except ValueError:
-            raise GeonamesError('API did not return valid json response.')
-        else:
-            if 'status' in json_response:
-                raise GeonamesError(json_response['status']['message'])
-        return json_response
-
-    def __build_url(self, service, params=None):
-        url = '%s%s?username=%s' % (TZGeonamesClient.BASE_URL, service, self.username)
-        if params:
-            if isinstance(params, dict):
-                params = dict((k, v) for k, v in params.items() if v is not None)
-                params = urllib.urlencode(params)
-            url = '%s&%s' % (url, params)
-        return url
-
-    def find_timezone(self, lon, lat):
-        # http://api.geonames.org/timezoneJSON?lat=47.01&lng=10.2&username=demo
-        return self.__call('timezoneJSON', {'lat':lat, 'lng':lon})
-
-    def get_utc_offset(self, lon, lat):
-
-        tz = self.find_timezone(lon, lat)
-        return tz['rawOffset']
-
 def grt_circle_dist(lon1,lat1,lon2,lat2):
     """Calculate great circle distance according to the haversine formula
     

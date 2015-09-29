@@ -1284,8 +1284,7 @@ class MadisObsIO(ObsIO):
 
     def __init__(self, local_data_path=None, data_version=None, username=None,
                  password=None, madis_datasets=None, local_time_zones=None,
-                 fname_tz_geonames=None, min_hrly_for_dly=None, nprocs=1,
-                 **kwargs):
+                 min_hrly_for_dly=None, nprocs=1, **kwargs):
 
         super(MadisObsIO, self).__init__(**kwargs)
 
@@ -1309,7 +1308,6 @@ class MadisObsIO(ObsIO):
                 self.min_hrly_for_dly[
                     a_elem] = self._MIN_HRLY_FOR_DLY_DFLT[a_elem]
 
-        self._fname_tz_geonames = fname_tz_geonames
         self._username = username
         self._password = password
         self._url_base_madis = _URL_BASE_MADIS%self.data_version
@@ -1404,7 +1402,7 @@ class MadisObsIO(ObsIO):
 
         if self._a_tz is None:
 
-            self._a_tz = TimeZones(self._fname_tz_geonames)
+            self._a_tz = TimeZones()
 
         return self._a_tz
 

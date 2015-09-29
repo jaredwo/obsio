@@ -27,5 +27,5 @@ setup(name='obsio',
                    'Programming Language :: Python :: 2',
                    'Programming Language :: Python :: 2.7'],    
       install_requires=['lxml', 'netCDF4', 'numpy', 'pandas', 'pycurl', 'pytz',
-                        'scipy', 'suds', 'tzwhere', 'xray'] 
+                        'scipy', 'shapely', 'suds', 'tzwhere', 'xray'] 
 )
