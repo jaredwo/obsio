@@ -83,7 +83,7 @@ class TimeZones():
         
             if mask_tznull.any() and chck_nghs:
     
-                print ("Could not determine timezone locally or with geonames "
+                print ("Could not determine timezone with tzwhere "
                        "for %d stations. Trying nearest neighbors..." % 
                        (mask_tznull.sum(),))
     
