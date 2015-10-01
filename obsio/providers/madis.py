@@ -30,8 +30,7 @@ _MADIS_SFC_DATASETS = ['LDAD/mesonet/netCDF', 'point/metar/netcdf',
 
 _DATE_FMT_MADIS_FILE = '%Y%m%d_%H%M.gz'
 
-_UNIQ_STN_COLUMNS = ['station_id_orig', 'provider', 'sub_provider',
-                     'station_name', 'elevation', 'longitude', 'latitude']
+_UNIQ_STN_COLUMNS = ['station_id', 'elevation', 'longitude', 'latitude']
 
 # QA Flags for MADIS: https://madis.ncep.noaa.gov/madis_sfc_qc.shtml
 # Z = "No QC applied" ;
@@ -83,6 +82,7 @@ def _madis_file_to_df(fpath, dly_elem, bbox):
     print "Reading " + fpath
 
     try:
+        
         ds = xray.open_dataset(fpath, decode_cf=True,
                                mask_and_scale=False,
                                concat_characters=True,
@@ -93,7 +93,7 @@ def _madis_file_to_df(fpath, dly_elem, bbox):
         df = transform_func(ds, dly_elem, bbox)
         ds.close()
 
-    except ValueError as e:
+    except Exception as e:
 
         if e.args[0] == 'string size must be a multiple of element size':
 
@@ -119,9 +119,18 @@ def _madis_file_to_df(fpath, dly_elem, bbox):
             os.remove(fpath_tmp)
 
         else:
-            raise
+            
+            df = None
     
-    if df.empty:
+            print ("Warning: Unexpected exception reading file: %s ."
+                   " Exception: %s"%(fpath, str(e)))
+    
+    try:
+        is_empty = df.empty
+    except AttributeError:
+        is_empty = True
+    
+    if is_empty:
         print "Warning: File does not appear to have any valid data: "+fpath
     
     return df
@@ -269,8 +278,8 @@ class _Tmin(_DailyElem):
                     (obs_tz.index < end_time))
         obs_tz_day = obs_tz[mask_day]
 
-        # Group observations by site_number, day, and hour
-        obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.uid,
+        # Group observations by station_id, day, and hour
+        obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.station_id,
                                                   obs_tz_day.index.hour,
                                                   obs_tz_day.index.day])
         # For each stationId and hour, get min and max temperature
@@ -304,7 +313,7 @@ class _Tmin(_DailyElem):
             df_metar = _metar_24hr(obs_tz[mask_metar], tz_name, a_date,
                                    vname_24hr='minTemp24Hour_C')
 
-            df_out = df_out[~df_out.uid.isin(df_metar.uid)]
+            df_out = df_out[~df_out.station_id.isin(df_metar.station_id)]
             df_out = pd.concat([df_out, df_metar], ignore_index=True)
 
         return df_out
@@ -383,8 +392,8 @@ class _Tmax(_DailyElem):
                     (obs_tz.index < end_time))
         obs_tz_day = obs_tz[mask_day]
 
-        # Group observations by site_number, day, and hour
-        obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.uid,
+        # Group observations by station_id, day, and hour
+        obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.station_id,
                                                   obs_tz_day.index.hour,
                                                   obs_tz_day.index.day])
         # For each stationId and hour, get min and max temperature
@@ -418,7 +427,7 @@ class _Tmax(_DailyElem):
             df_metar = _metar_24hr(obs_tz[mask_metar], tz_name, a_date,
                                    vname_24hr='maxTemp24Hour_C')
 
-            df_out = df_out[~df_out.uid.isin(df_metar.uid)]
+            df_out = df_out[~df_out.station_id.isin(df_metar.station_id)]
             df_out = pd.concat([df_out, df_metar], ignore_index=True)
 
         return df_out
@@ -506,8 +515,8 @@ class _Tdew(_DailyElem):
                     (obs_tz.index < end_time))
         obs_tz_day = obs_tz[mask_day]
 
-        # Group observations by site_number, day, and hour
-        obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.uid,
+        # Group observations by station_id, day, and hour
+        obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.station_id,
                                                   obs_tz_day.index.hour,
                                                   obs_tz_day.index.day])
         # For each stationId and hour, get mean dewpoint_C, mean dewpoint_rh_C
@@ -608,7 +617,7 @@ class _Wspd(_DailyElem):
         obs_tz_day = obs_tz[mask_day]
 
         # Group observations by site_number, day, and hour
-        obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.uid,
+        obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.station_id,
                                                   obs_tz_day.index.hour,
                                                   obs_tz_day.index.day])
 
@@ -717,8 +726,8 @@ class _Srad(_DailyElem):
                     (obs_tz.index < end_time))
         obs_tz_day = obs_tz[mask_day]
 
-        # Group observations by site_number, day, and hour
-        obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.uid,
+        # Group observations by station_id, day, and hour
+        obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.station_id,
                                                   obs_tz_day.index.hour,
                                                   obs_tz_day.index.day])
 
@@ -833,7 +842,7 @@ class _Prcp(_DailyElem):
         try:
             # Calculate first difference of precipAccum at each station to get
             # precipitation deltas
-            obs_tz_day = obs_tz_day.set_index([obs_tz_day.uid,
+            obs_tz_day = obs_tz_day.set_index([obs_tz_day.station_id,
                                                obs_tz_day.index])
             obs_tz_day = obs_tz_day.sortlevel(0, sort_remaining=True)
 
@@ -842,9 +851,9 @@ class _Prcp(_DailyElem):
 
             obs_tz_day['precipAccum'] = obs_accum
 
-            uid = obs_tz_day.index.get_level_values(0)
+            station_id = obs_tz_day.index.get_level_values(0)
             obs_tz_day.index = obs_tz_day.index.droplevel(0)
-            obs_tz_day['uid'] = uid
+            obs_tz_day['station_id'] = station_id
 
             # Remove observations that where >= begin_time_accum but not
             # end_time
@@ -854,7 +863,7 @@ class _Prcp(_DailyElem):
             obs_tz_day.loc[obs_tz_day.precipAccum < 0, 'precipAccum'] = 0
 
             # Group observations by site_number, day, and hour
-            obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.uid,
+            obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.station_id,
                                                       obs_tz_day.index.hour,
                                                       obs_tz_day.index.day])
 
@@ -1032,12 +1041,12 @@ def _to_dataframe_MADIS_METAR(ds, dly_elem, bbox=None):
     ds = xray.decode_cf(ds)
 
     df = ds.to_dataframe()
-    df.rename(columns={'stationName': 'station_id_orig', 'timeObs':
+    df.rename(columns={'stationName': 'station_id', 'timeObs':
                        'time', 'locationName': 'station_name'}, inplace=True)
     df['provider'] = 'MADIS_METAR'
     df['sub_provider'] = ''
 
-    vnames_df = _combine_vnames(['station_id_orig', 'station_name', 'provider',
+    vnames_df = _combine_vnames(['station_id', 'station_name', 'provider',
                                  'sub_provider', 'elevation', 'longitude',
                                  'latitude', 'time'], dly_elem.vnames,
                                 df.columns)
@@ -1082,13 +1091,13 @@ def _to_dataframe_MADIS_SAO(ds, dly_elem, bbox=None):
     ds = xray.decode_cf(ds)
 
     df = ds.to_dataframe()
-    df.rename(columns={'stationName': 'station_id_orig', 'timeObs': 'time'},
+    df.rename(columns={'stationName': 'station_id', 'timeObs': 'time'},
               inplace=True)
     df['provider'] = 'MADIS_SAO'
     df['sub_provider'] = ''
     df['station_name'] = ''
-    df['station_id_orig'] = df['station_id_orig'].str.strip()
-    vnames_df = _combine_vnames(['station_id_orig', 'station_name', 'provider',
+    df['station_id'] = df['station_id'].str.strip()
+    vnames_df = _combine_vnames(['station_id', 'station_name', 'provider',
                                  'sub_provider', 'elevation', 'longitude',
                                  'latitude', 'time'], dly_elem.vnames,
                                 df.columns)
@@ -1142,13 +1151,13 @@ def _to_dataframe_MADIS_MESONET(ds, dly_elem, bbox=None):
     ds = xray.decode_cf(ds)
 
     df = ds.to_dataframe()
-    df['station_id_orig'] = df['dataProvider'] + "_" + df['providerId']
+    df['station_id'] = df['dataProvider'] + "_" + df['providerId']
 
     df.rename(columns={'stationName': 'station_name', 'observationTime':
                        'time', 'dataProvider': 'sub_provider'}, inplace=True)
     df['provider'] = 'MADIS_MESONET'
 
-    vnames_df = _combine_vnames(['station_id_orig', 'station_name', 'provider',
+    vnames_df = _combine_vnames(['station_id', 'station_name', 'provider',
                                  'sub_provider', 'elevation', 'longitude',
                                  'latitude', 'time'], dly_elem.vnames,
                                 df.columns)
@@ -1216,13 +1225,13 @@ def _to_dataframe_MADIS_COOP(ds, dly_elem, bbox=None):
     ds = xray.decode_cf(ds)
 
     df = ds.to_dataframe()
-    df['station_id_orig'] = df['dataProvider'] + "_" + df['providerId']
+    df['station_id'] = df['dataProvider'] + "_" + df['providerId']
 
     df.rename(columns={'stationName': 'station_name', 'observationTime':
                        'time', 'dataProvider': 'sub_provider'}, inplace=True)
     df['provider'] = 'MADIS_COOP'
 
-    vnames_df = _combine_vnames(['station_id_orig', 'station_name', 'provider',
+    vnames_df = _combine_vnames(['station_id', 'station_name', 'provider',
                                  'sub_provider', 'elevation', 'longitude',
                                  'latitude', 'time'], dly_elem.vnames,
                                 df.columns)
@@ -1252,7 +1261,7 @@ def _metar_24hr(a_obs_metar, tz_name, a_date, vname_24hr):
 
     mask_hr = a_obs_metar['timeNominal'] == hr_minmax
     obs_minmax = a_obs_metar[mask_hr]
-    obs_minmax = obs_minmax.groupby('uid').mean()
+    obs_minmax = obs_minmax.groupby('station_id').mean()
 
     df_out = obs_minmax.loc[~obs_minmax[vname_24hr].isnull(),
                             [vname_24hr]].reset_index()
@@ -1325,19 +1334,6 @@ class MadisObsIO(ObsIO):
             
         self.path_madis_data = path_madis_data
         
-        self._fpath_stns_cache = os.path.join(self.path_madis_data,
-                                              'stns_cache.pkl')
-
-        try:
-
-            self._stns_cache = _round_coords(pd.read_pickle(self.
-                                                            _fpath_stns_cache))
-
-        except IOError:
-
-            self._stns_cache = pd.DataFrame(columns=_UNIQ_STN_COLUMNS + ['uid',
-                                                                         'time_zone'])
-
         if self.has_start_end_dates:
 
             start_date = self.start_date
@@ -1457,46 +1453,76 @@ class MadisObsIO(ObsIO):
         return self._a_df_obs
 
     @property
-    def _df_obs_with_uid(self):
+    def _df_obs_with_tz(self):
 
-        if 'uid' not in self._df_obs.columns:
+        if 'time_zone' not in self._df_obs.columns:
             
             print ("MadisObsIO: Initializing loaded observations "
-                   "for daily aggregation...")
+                   "for daily aggregation..."),
 
             self._df_obs.reset_index(inplace=True)
 
-            self._a_df_obs = self._df_obs.merge(self.
-                                                stns[_UNIQ_STN_COLUMNS +
-                                                     ['uid', 'time_zone']],
-                                                on=_UNIQ_STN_COLUMNS,
-                                                how='left', sort=False)
+            self._a_df_obs = self._df_obs.merge(self.stns[['station_id',
+                                                           'time_zone']],
+                                                on='station_id', how='left',
+                                                sort=False)
 
             self._a_df_obs.set_index('time', inplace=True)
+            
+            print 'done.'
 
         return self._a_df_obs
 
     def _read_stns(self):
 
-        mask_dup = self._df_obs.duplicated(_UNIQ_STN_COLUMNS)
-        stns = (self._df_obs.loc[~mask_dup, _UNIQ_STN_COLUMNS].
-                reset_index(drop=True))
-        stns = self._merge_with_stn_cache(stns)
-        self._update_stn_cache(stns)
-
+        mask_dup = self._df_obs.duplicated(_UNIQ_STN_COLUMNS, take_last=True)
+        
+        stn_cols = _UNIQ_STN_COLUMNS + ['station_name',
+                                        'provider', 'sub_provider']
+        
+        stns = (self._df_obs.loc[~mask_dup, stn_cols].reset_index(drop=True))
+        
+        mask_dup_id = stns.duplicated(['station_id'], take_last=True)
+        
+        if mask_dup_id.any():
+            
+            ndups = mask_dup_id.sum()
+            
+            print ("Warning: MadisObsIO: Found %d stations whose location "
+                   "information changed during dates being processed. Only the"
+                   " most recent location information for these stations will"
+                   " be returned."%ndups)
+            
+            stns = stns[~mask_dup_id]
+        
+        stns = stns.set_index('station_id', drop=False)
+        
+        def to_unicode(a_str):
+            
+            try:
+                return a_str.decode('utf-8')
+            except UnicodeDecodeError:
+                # If there is a decode error, just return a blank name to be
+                # safe.
+                return u''
+        
+        stns['station_name'] = stns.station_name.apply(to_unicode)
+        
+        self._tz.set_tz(stns)
+        
         return stns
 
     def read_obs(self, stns_ids=None):
 
         if stns_ids is None:
             stns_obs = self.stns
-            df_obs = self._df_obs_with_uid
+            df_obs = self._df_obs_with_tz
         else:
 
             stns_obs = self.stns.loc[stns_ids]
 
-            df_obs = self._df_obs_with_uid[self._df_obs_with_uid.
-                                           uid.isin(stns_obs.uid)]
+            df_obs = self._df_obs_with_tz[self._df_obs_with_tz.
+                                          station_id.isin(stns_obs.station_id)]
 
         grp_tz = df_obs.groupby('time_zone')
         all_obs = []
@@ -1510,14 +1536,10 @@ class MadisObsIO(ObsIO):
             all_obs.append(df_dly)
 
         all_obs = pd.concat(all_obs, ignore_index=True)
+        all_obs = all_obs.set_index(['station_id', 'elem', 'time'])
+        all_obs = all_obs.sortlevel(0, sort_remaining=True)
 
-        obs_merge = pd.merge(all_obs, self.stns[['uid', 'station_id']],
-                             how='left', on='uid', sort=False)
-
-        obs_merge = obs_merge.set_index(['station_id', 'elem', 'time'])
-        obs_merge = obs_merge.sortlevel(0, sort_remaining=True)
-
-        return obs_merge
+        return all_obs
 
     def download_local(self):
 
@@ -1677,58 +1699,3 @@ class MadisObsIO(ObsIO):
                             self._url_base_madis, a_dspath, a_fname)
                         _wget_madis_file(url, path_local, self._username,
                                          self._password)
-
-    def _merge_with_stn_cache(self, stns_new):
-
-        stns_new = _round_coords(stns_new)
-        stns_cache = self._stns_cache
-
-        if stns_cache.size != 0:
-
-            stns_merge = stns_new.merge(stns_cache[_UNIQ_STN_COLUMNS +
-                                                   ['uid', 'time_zone']],
-                                        on=_UNIQ_STN_COLUMNS, how='left',
-                                        sort=False)
-
-        else:
-
-            stns_merge = stns_new
-
-        if not 'uid' in stns_merge.columns:
-            stns_merge['uid'] = np.nan
-
-        if not 'time_zone' in stns_merge.columns:
-            stns_merge['time_zone'] = np.nan
-
-        if stns_merge.shape[0] != stns_new.shape[0]:
-            raise ValueError("Non-unique station location.")
-
-        mask_no_uid = stns_merge.uid.isnull()
-
-        if mask_no_uid.any():
-
-            n_no_uid = mask_no_uid.sum()
-            max_uid = -1 if stns_cache.size == 0 else stns_cache.uid.max()
-            stns_merge.loc[mask_no_uid, 'uid'] = np.arange(max_uid + 1,
-                                                           max_uid + 1 +
-                                                           n_no_uid)
-
-        mask_no_tz = stns_merge['time_zone'].isnull()
-
-        if mask_no_tz.any():
-
-            self._tz.set_tz(stns_merge)
-
-        stns_merge['station_id'] = (stns_merge.station_id_orig + "_" +
-                                    stns_merge.uid.apply(lambda x: '%d' % x))
-        stns_merge = stns_merge.set_index('station_id', drop=False)
-        return stns_merge
-
-    def _update_stn_cache(self, stns):
-
-        mask_exist = stns.index.isin(self._stns_cache.index)
-
-        self._stns_cache = pd.concat([self._stns_cache,
-                                      stns.drop(stns.index[mask_exist])])
-
-        pd.to_pickle(self._stns_cache, self._fpath_stns_cache)
