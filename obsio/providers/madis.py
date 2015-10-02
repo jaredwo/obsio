@@ -82,7 +82,7 @@ def _madis_file_to_df(fpath, dly_elem, bbox):
     print "Reading " + fpath
 
     try:
-        
+
         ds = xray.open_dataset(fpath, decode_cf=True,
                                mask_and_scale=False,
                                concat_characters=True,
@@ -119,20 +119,20 @@ def _madis_file_to_df(fpath, dly_elem, bbox):
             os.remove(fpath_tmp)
 
         else:
-            
+
             df = None
-    
+
             print ("Warning: Unexpected exception reading file: %s ."
-                   " Exception: %s"%(fpath, str(e)))
-    
+                   " Exception: %s" % (fpath, str(e)))
+
     try:
         is_empty = df.empty
     except AttributeError:
         is_empty = True
-    
+
     if is_empty:
-        print "Warning: File does not appear to have any valid data: "+fpath
-    
+        print "Warning: File does not appear to have any valid data: " + fpath
+
     return df
 
 
@@ -159,7 +159,7 @@ class _DailyElem(object):
     def convert_units(self, df):
         raise NotImplementedError
 
-    def transform_to_daily(self, obs_tz, a_date):
+    def transform_to_daily(self, obs_tz, a_date, obs_grped_hrs_stnid):
         raise NotImplementedError
 
     def _get_mask_rm(self, df, vname, vname_qa,
@@ -191,15 +191,15 @@ class _DailyElem(object):
     def _set_nan(self, df, mask, vname):
 
         try:
-            
+
             df.loc[mask, vname] = np.nan
-        
+
         except KeyError:
-        
+
             pass
-        
+
         except ValueError as e:
-            
+
             nodata_msg = 'cannot set a frame with no defined index and a scalar'
             if e.args[0].strip() != nodata_msg:
                 raise
@@ -244,44 +244,10 @@ class _Tmin(_DailyElem):
 
             df['minTemp24Hour_C'] = _k_to_c(df['minTemp24Hour'])
 
-    def transform_to_daily(self, obs_tz, a_date):
+    def transform_to_daily(self, obs_tz, a_date, obs_grped_hrs_stnid):
 
         tz_name = obs_tz.name
 
-        # Get begin/end local time bounds for the local calendar day
-        # On daylight savings time transition days, the time period is
-        # still limited to 24 hours and may include an hour in the next calendar
-        # day or one less hour in the current calendar day.
-        try:
-            begin_time = a_date.tz_localize(tz_name)
-        except NonExistentTimeError:
-            # Time does not exist because of clocks are set forward
-            # for daylight savings time at midnight for this time zone.
-            # This only happens in the America/Havana time zone. Add one hour
-            # to the begin_time
-            begin_time = (a_date + pd.Timedelta(hours=1)).tz_localize(tz_name)
-        except AmbiguousTimeError:
-            # Time is ambiguous because clocks are set backward for daylight
-            # savings time at midnight for this time zone. This only happens in
-            # the America/Havana time zone. Set ambiguous=True so that dst=True
-            # and the time is considered to be the first occurrence.
-            begin_time = a_date.tz_localize(tz_name, ambiguous=True)
-
-        end_time = begin_time + pd.Timedelta(days=1)
-
-        begin_time = begin_time.tz_convert('UTC').tz_convert(None)
-        end_time = end_time.tz_convert('UTC').tz_convert(None)
-
-        # Create mask of observations that fall within specified local calendar day
-        # and subset observations by mask
-        mask_day = ((obs_tz.index >= begin_time) &
-                    (obs_tz.index < end_time))
-        obs_tz_day = obs_tz[mask_day]
-
-        # Group observations by station_id, day, and hour
-        obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.station_id,
-                                                  obs_tz_day.index.hour,
-                                                  obs_tz_day.index.day])
         # For each stationId and hour, get min and max temperature
         obs_hrly = obs_grped_hrs_stnid['temperature_C'].agg({'tmin': np.min})
 
@@ -358,44 +324,10 @@ class _Tmax(_DailyElem):
 
             df['maxTemp24Hour_C'] = _k_to_c(df['maxTemp24Hour'])
 
-    def transform_to_daily(self, obs_tz, a_date):
+    def transform_to_daily(self, obs_tz, a_date, obs_grped_hrs_stnid):
 
         tz_name = obs_tz.name
 
-        # Get begin/end local time bounds for the local calendar day
-        # On daylight savings time transition days, the time period is
-        # still limited to 24 hours and may include an hour in the next calendar
-        # day or one less hour in the current calendar day.
-        try:
-            begin_time = a_date.tz_localize(tz_name)
-        except NonExistentTimeError:
-            # Time does not exist because of clocks are set forward
-            # for daylight savings time at midnight for this time zone.
-            # This only happens in the America/Havana time zone. Add one hour
-            # to the begin_time
-            begin_time = (a_date + pd.Timedelta(hours=1)).tz_localize(tz_name)
-        except AmbiguousTimeError:
-            # Time is ambiguous because clocks are set backward for daylight
-            # savings time at midnight for this time zone. This only happens in
-            # the America/Havana time zone. Set ambiguous=True so that dst=True
-            # and the time is considered to be the first occurrence.
-            begin_time = a_date.tz_localize(tz_name, ambiguous=True)
-
-        end_time = begin_time + pd.Timedelta(days=1)
-
-        begin_time = begin_time.tz_convert('UTC').tz_convert(None)
-        end_time = end_time.tz_convert('UTC').tz_convert(None)
-
-        # Create mask of observations that fall within specified local calendar day
-        # and subset observations by mask
-        mask_day = ((obs_tz.index >= begin_time) &
-                    (obs_tz.index < end_time))
-        obs_tz_day = obs_tz[mask_day]
-
-        # Group observations by station_id, day, and hour
-        obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.station_id,
-                                                  obs_tz_day.index.hour,
-                                                  obs_tz_day.index.day])
         # For each stationId and hour, get min and max temperature
         obs_hrly = obs_grped_hrs_stnid['temperature_C'].agg({'tmax': np.max})
 
@@ -481,44 +413,8 @@ class _Tdew(_DailyElem):
             df['dewpoint_rh_C'] = calc_dew(df['relHumidity'],
                                            df['temperature_C'])
 
-    def transform_to_daily(self, obs_tz, a_date):
+    def transform_to_daily(self, obs_tz, a_date, obs_grped_hrs_stnid):
 
-        tz_name = obs_tz.name
-
-        # Get begin/end local time bounds for the local calendar day
-        # On daylight savings time transition days, the time period is
-        # still limited to 24 hours and may include an hour in the next calendar
-        # day or one less hour in the current calendar day.
-        try:
-            begin_time = a_date.tz_localize(tz_name)
-        except NonExistentTimeError:
-            # Time does not exist because of clocks are set forward
-            # for daylight savings time at midnight for this time zone.
-            # This only happens in the America/Havana time zone. Add one hour
-            # to the begin_time
-            begin_time = (a_date + pd.Timedelta(hours=1)).tz_localize(tz_name)
-        except AmbiguousTimeError:
-            # Time is ambiguous because clocks are set backward for daylight
-            # savings time at midnight for this time zone. This only happens in
-            # the America/Havana time zone. Set ambiguous=True so that dst=True
-            # and the time is considered to be the first occurrence.
-            begin_time = a_date.tz_localize(tz_name, ambiguous=True)
-
-        end_time = begin_time + pd.Timedelta(days=1)
-
-        begin_time = begin_time.tz_convert('UTC').tz_convert(None)
-        end_time = end_time.tz_convert('UTC').tz_convert(None)
-
-        # Create mask of observations that fall within specified local calendar day
-        # and subset observations by mask
-        mask_day = ((obs_tz.index >= begin_time) &
-                    (obs_tz.index < end_time))
-        obs_tz_day = obs_tz[mask_day]
-
-        # Group observations by station_id, day, and hour
-        obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.station_id,
-                                                  obs_tz_day.index.hour,
-                                                  obs_tz_day.index.day])
         # For each stationId and hour, get mean dewpoint_C, mean dewpoint_rh_C
         obs_hrly = (obs_grped_hrs_stnid[['dewpoint_C', 'dewpoint_rh_C']].
                     agg(np.mean))
@@ -582,44 +478,7 @@ class _Wspd(_DailyElem):
 
         pass
 
-    def transform_to_daily(self, obs_tz, a_date):
-
-        tz_name = obs_tz.name
-
-        # Get begin/end local time bounds for the local calendar day
-        # On daylight savings time transition days, the time period is
-        # still limited to 24 hours and may include an hour in the next calendar
-        # day or one less hour in the current calendar day.
-        try:
-            begin_time = a_date.tz_localize(tz_name)
-        except NonExistentTimeError:
-            # Time does not exist because of clocks are set forward
-            # for daylight savings time at midnight for this time zone.
-            # This only happens in the America/Havana time zone. Add one hour
-            # to the begin_time
-            begin_time = (a_date + pd.Timedelta(hours=1)).tz_localize(tz_name)
-        except AmbiguousTimeError:
-            # Time is ambiguous because clocks are set backward for daylight
-            # savings time at midnight for this time zone. This only happens in
-            # the America/Havana time zone. Set ambiguous=True so that dst=True
-            # and the time is considered to be the first occurrence.
-            begin_time = a_date.tz_localize(tz_name, ambiguous=True)
-
-        end_time = begin_time + pd.Timedelta(days=1)
-
-        begin_time = begin_time.tz_convert('UTC').tz_convert(None)
-        end_time = end_time.tz_convert('UTC').tz_convert(None)
-
-        # Create mask of observations that fall within specified local calendar day
-        # and subset observations by mask
-        mask_day = ((obs_tz.index >= begin_time) &
-                    (obs_tz.index < end_time))
-        obs_tz_day = obs_tz[mask_day]
-
-        # Group observations by site_number, day, and hour
-        obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.station_id,
-                                                  obs_tz_day.index.hour,
-                                                  obs_tz_day.index.day])
+    def transform_to_daily(self, obs_tz, a_date, obs_grped_hrs_stnid):
 
         # For each stationId and hour, get mean wind speed
         obs_hrly = (obs_grped_hrs_stnid[['windSpeed']].agg(np.mean))
@@ -692,44 +551,7 @@ class _Srad(_DailyElem):
 
         pass
 
-    def transform_to_daily(self, obs_tz, a_date):
-
-        tz_name = obs_tz.name
-
-        # Get begin/end local time bounds for the local calendar day
-        # On daylight savings time transition days, the time period is
-        # still limited to 24 hours and may include an hour in the next calendar
-        # day or one less hour in the current calendar day.
-        try:
-            begin_time = a_date.tz_localize(tz_name)
-        except NonExistentTimeError:
-            # Time does not exist because of clocks are set forward
-            # for daylight savings time at midnight for this time zone.
-            # This only happens in the America/Havana time zone. Add one hour
-            # to the begin_time
-            begin_time = (a_date + pd.Timedelta(hours=1)).tz_localize(tz_name)
-        except AmbiguousTimeError:
-            # Time is ambiguous because clocks are set backward for daylight
-            # savings time at midnight for this time zone. This only happens in
-            # the America/Havana time zone. Set ambiguous=True so that dst=True
-            # and the time is considered to be the first occurrence.
-            begin_time = a_date.tz_localize(tz_name, ambiguous=True)
-
-        end_time = begin_time + pd.Timedelta(days=1)
-
-        begin_time = begin_time.tz_convert('UTC').tz_convert(None)
-        end_time = end_time.tz_convert('UTC').tz_convert(None)
-
-        # Create mask of observations that fall within specified local calendar day
-        # and subset observations by mask
-        mask_day = ((obs_tz.index >= begin_time) &
-                    (obs_tz.index < end_time))
-        obs_tz_day = obs_tz[mask_day]
-
-        # Group observations by station_id, day, and hour
-        obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.station_id,
-                                                  obs_tz_day.index.hour,
-                                                  obs_tz_day.index.day])
+    def transform_to_daily(self, obs_tz, a_date, obs_grped_hrs_stnid):
 
         # For each stationId and hour, get mean srad
         obs_hrly = (obs_grped_hrs_stnid[['solarRadiation']].agg(np.mean))
@@ -801,87 +623,51 @@ class _Prcp(_DailyElem):
             # convert meters per second to millimeters per second
             df['precipRate_mm'] = df['precipRate'] * 1000.0
 
-    def transform_to_daily(self, obs_tz, a_date):
+        if 'precipAccum' in df.columns and "precipAccumDelta" not in df.columns:
 
-        tz_name = obs_tz.name
-
-        # Get begin/end local time bounds for the local calendar day
-        # On daylight savings time transition days, the time period is
-        # still limited to 24 hours and may include an hour in the next calendar
-        # day or one less hour in the current calendar day.
-        try:
-            begin_time = a_date.tz_localize(tz_name)
-        except NonExistentTimeError:
-            # Time does not exist because of clocks are set forward
-            # for daylight savings time at midnight for this time zone.
-            # This only happens in the America/Havana time zone. Add one hour
-            # to the begin_time
-            begin_time = (a_date + pd.Timedelta(hours=1)).tz_localize(tz_name)
-        except AmbiguousTimeError:
-            # Time is ambiguous because clocks are set backward for daylight
-            # savings time at midnight for this time zone. This only happens in
-            # the America/Havana time zone. Set ambiguous=True so that dst=True
-            # and the time is considered to be the first occurrence.
-            begin_time = a_date.tz_localize(tz_name, ambiguous=True)
-
-        end_time = begin_time + pd.Timedelta(days=1)
-
-        begin_time = begin_time.tz_convert('UTC').tz_convert(None)
-        end_time = end_time.tz_convert('UTC').tz_convert(None)
-
-        # subtract another hour from beginTime to get precip accum delta
-        # at the true begin time
-        begin_time_accum = begin_time - pd.Timedelta(hours=1)
-
-        # Create mask of observations that fall within specified local calendar day
-        # and subset observations by mask
-        mask_day = ((obs_tz.index >= begin_time_accum) &
-                    (obs_tz.index < end_time))
-        obs_tz_day = obs_tz[mask_day]
-
-        try:
             # Calculate first difference of precipAccum at each station to get
             # precipitation deltas
-            obs_tz_day = obs_tz_day.set_index([obs_tz_day.station_id,
-                                               obs_tz_day.index])
-            obs_tz_day = obs_tz_day.sortlevel(0, sort_remaining=True)
+            prcp_accum = df[['station_id', 'precipAccum']].copy()
+            prcp_accum['uid'] = np.arange(len(prcp_accum))
+            prcp_accum = prcp_accum.set_index([prcp_accum.station_id,
+                                               prcp_accum.index])
+            prcp_accum = prcp_accum.sortlevel(0, sort_remaining=True)
 
-            obs_accum = (obs_tz_day.groupby(level=0)[['precipAccum']].
-                         transform(lambda x: x.diff()))
+            prcp_delta = (prcp_accum.groupby(level=0)[['precipAccum']].
+                          transform(lambda x: x.diff()))
+            prcp_delta['uid'] = prcp_accum['uid']
+            prcp_delta.rename(columns={'precipAccum': 'precipAccumDelta'},
+                              inplace=True)
 
-            obs_tz_day['precipAccum'] = obs_accum
+            # Set any negative precipAccum deltas to 0.
+            # A negative value means that the precipAccum was reset back to 0
+            mask_neg = prcp_delta.precipAccumDelta < 0
+            prcp_delta.loc[mask_neg, 'precipAccumDelta'] = 0
 
-            station_id = obs_tz_day.index.get_level_values(0)
-            obs_tz_day.index = obs_tz_day.index.droplevel(0)
-            obs_tz_day['station_id'] = station_id
+            prcp_delta = prcp_delta.set_index('uid')
+            prcp_delta.sort_index(inplace=True)
 
-            # Remove observations that where >= begin_time_accum but not
-            # end_time
-            obs_tz_day = obs_tz_day[obs_tz_day.index >= begin_time].copy()
-            # Set any negative precipAccum deltas to 0. A negative value means
-            # that the precipAccum was reset back to 0
-            obs_tz_day.loc[obs_tz_day.precipAccum < 0, 'precipAccum'] = 0
+            df['precipAccumDelta'] = prcp_delta.precipAccumDelta.values
 
-            # Group observations by site_number, day, and hour
-            obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.station_id,
-                                                      obs_tz_day.index.hour,
-                                                      obs_tz_day.index.day])
+    def transform_to_daily(self, obs_tz, a_date, obs_grped_hrs_stnid):
+
+        try:
 
             # For each stationId and hour, get the sum of precipAccum and the
             # mean of precipRate
-            obs_hrly = (obs_grped_hrs_stnid.agg({'precipAccum': np.sum,
+            obs_hrly = (obs_grped_hrs_stnid.agg({'precipAccumDelta': np.sum,
                                                  'precipRate_mm': np.mean}))
 
             # Group  by stationId
             obs_hrly_grped_stns = obs_hrly.groupby(level=0)
 
             # Count the number of hourly obs for precipAccum, precipRate_mm
-            nobs = obs_hrly_grped_stns[
-                ['precipAccum', 'precipRate_mm']].count()
+            nobs = obs_hrly_grped_stns[['precipAccumDelta',
+                                        'precipRate_mm']].count()
 
             # Create masks of stationIds that have minimum number of
             # of hourly obs to calculate reliable total daily prcp
-            mask_nhrs_accum = nobs['precipAccum'] >= self.min_hrly_for_dly
+            mask_nhrs_accum = nobs['precipAccumDelta'] >= self.min_hrly_for_dly
             mask_nhrs_rate = nobs['precipRate_mm'] >= self.min_hrly_for_dly
 
             # Get the sum of all precipAccum deltas to get total prcp for day
@@ -889,13 +675,13 @@ class _Prcp(_DailyElem):
             # number of seconds in the day to derive total precip from
             # precipRate
             rate_total_func = lambda x: x.mean() * 86400
-            obs_total_prcp = obs_hrly_grped_stns.agg({'precipAccum': np.sum,
+            obs_total_prcp = obs_hrly_grped_stns.agg({'precipAccumDelta': np.sum,
                                                       'precipRate_mm':
                                                       rate_total_func})
 
             # Remove stations that did not meet minimum number of hourly
             # observation requirements
-            accum_total = obs_total_prcp['precipAccum'][mask_nhrs_accum]
+            accum_total = obs_total_prcp['precipAccumDelta'][mask_nhrs_accum]
             rate_total = obs_total_prcp['precipRate_mm'][mask_nhrs_rate]
 
             # Prefer to use precipAccum-derived total than precipRate-derived total
@@ -974,9 +760,10 @@ class _MultiElem(_DailyElem):
         for a_dly_elem in self._dly_elems:
             a_dly_elem.convert_units(df)
 
-    def transform_to_daily(self, obs_tz, a_date):
+    def transform_to_daily(self, obs_tz, a_date, obs_grped_hrs_stnid):
 
-        all_obs = [a_elem.transform_to_daily(obs_tz, a_date)
+        all_obs = [a_elem.transform_to_daily(obs_tz, a_date,
+                                             obs_grped_hrs_stnid)
                    for a_elem in self._dly_elems]
 
         all_obs = pd.concat(all_obs, ignore_index=True)
@@ -1058,7 +845,6 @@ def _to_dataframe_MADIS_METAR(ds, dly_elem, bbox=None):
         df = bbox.remove_outbnds_df(df)
 
     dly_elem.mask_qa(df, rm_inplace=True)
-    dly_elem.convert_units(df)
 
     return df
 
@@ -1109,7 +895,6 @@ def _to_dataframe_MADIS_SAO(ds, dly_elem, bbox=None):
         df = bbox.remove_outbnds_df(df)
 
     dly_elem.mask_qa(df, rm_inplace=True)
-    dly_elem.convert_units(df)
 
     return df
 
@@ -1169,7 +954,6 @@ def _to_dataframe_MADIS_MESONET(ds, dly_elem, bbox=None):
         df = bbox.remove_outbnds_df(df)
 
     dly_elem.mask_qa(df, rm_inplace=True)
-    dly_elem.convert_units(df)
 
     return df
 
@@ -1243,7 +1027,6 @@ def _to_dataframe_MADIS_COOP(ds, dly_elem, bbox=None):
         df = bbox.remove_outbnds_df(df)
 
     dly_elem.mask_qa(df, rm_inplace=True)
-    dly_elem.convert_units(df)
 
     return df
 
@@ -1319,21 +1102,21 @@ class MadisObsIO(ObsIO):
 
         self._username = username
         self._password = password
-        self._url_base_madis = _URL_BASE_MADIS%self.data_version
+        self._url_base_madis = _URL_BASE_MADIS % self.data_version
         self.nprocs = nprocs
-        
+
         path_madis_data = os.path.join(self.local_data_path, 'MADIS')
-                
+
         if not os.path.isdir(path_madis_data):
             os.mkdir(path_madis_data)
-        
+
         path_madis_data = os.path.join(path_madis_data, self.data_version)
-        
+
         if not os.path.isdir(path_madis_data):
             os.mkdir(path_madis_data)
-            
+
         self.path_madis_data = path_madis_data
-        
+
         if self.has_start_end_dates:
 
             start_date = self.start_date
@@ -1453,10 +1236,10 @@ class MadisObsIO(ObsIO):
         return self._a_df_obs
 
     @property
-    def _df_obs_with_tz(self):
+    def _df_obs_with_init(self):
 
         if 'time_zone' not in self._df_obs.columns:
-            
+
             print ("MadisObsIO: Initializing loaded observations "
                    "for daily aggregation..."),
 
@@ -1468,7 +1251,8 @@ class MadisObsIO(ObsIO):
                                                 sort=False)
 
             self._a_df_obs.set_index('time', inplace=True)
-            
+            self._dly_elem.convert_units(self._a_df_obs)
+
             print 'done.'
 
         return self._a_df_obs
@@ -1476,61 +1260,105 @@ class MadisObsIO(ObsIO):
     def _read_stns(self):
 
         mask_dup = self._df_obs.duplicated(_UNIQ_STN_COLUMNS, take_last=True)
-        
+
         stn_cols = _UNIQ_STN_COLUMNS + ['station_name',
                                         'provider', 'sub_provider']
-        
+
         stns = (self._df_obs.loc[~mask_dup, stn_cols].reset_index(drop=True))
-        
+
         mask_dup_id = stns.duplicated(['station_id'], take_last=True)
-        
+
         if mask_dup_id.any():
-            
+
             ndups = mask_dup_id.sum()
-            
+
             print ("Warning: MadisObsIO: Found %d stations whose location "
                    "information changed during dates being processed. Only the"
                    " most recent location information for these stations will"
-                   " be returned."%ndups)
-            
+                   " be returned." % ndups)
+
             stns = stns[~mask_dup_id]
-        
+
         stns = stns.set_index('station_id', drop=False)
-        
+
         def to_unicode(a_str):
-            
+
             try:
                 return a_str.decode('utf-8')
             except UnicodeDecodeError:
                 # If there is a decode error, just return a blank name to be
                 # safe.
                 return u''
-        
+
         stns['station_name'] = stns.station_name.apply(to_unicode)
-        
+
         self._tz.set_tz(stns)
-        
+
+        #stns['uid'] = np.arange(len(stns))
+
         return stns
 
     def read_obs(self, stns_ids=None):
 
         if stns_ids is None:
             stns_obs = self.stns
-            df_obs = self._df_obs_with_tz
+            df_obs = self._df_obs_with_init
         else:
 
             stns_obs = self.stns.loc[stns_ids]
 
-            df_obs = self._df_obs_with_tz[self._df_obs_with_tz.
-                                          station_id.isin(stns_obs.station_id)]
+            df_obs = self._df_obs_with_init[self._df_obs_with_init.
+                                            station_id.isin(stns_obs.station_id)]
 
         grp_tz = df_obs.groupby('time_zone')
         all_obs = []
 
+        def transform_to_daily(obs_tz, a_date):
+
+            tz_name = obs_tz.name
+
+            # Get begin/end local time bounds for the local calendar day
+            # On daylight savings time transition days, the time period is
+            # still limited to 24 hours and may include an hour in the next calendar
+            # day or one less hour in the current calendar day.
+            try:
+                begin_time = a_date.tz_localize(tz_name)
+            except NonExistentTimeError:
+                # Time does not exist because of clocks are set forward
+                # for daylight savings time at midnight for this time zone.
+                # This only happens in the America/Havana time zone. Add one hour
+                # to the begin_time
+                begin_time = (
+                    a_date + pd.Timedelta(hours=1)).tz_localize(tz_name)
+            except AmbiguousTimeError:
+                # Time is ambiguous because clocks are set backward for daylight
+                # savings time at midnight for this time zone. This only happens in
+                # the America/Havana time zone. Set ambiguous=True so that dst=True
+                # and the time is considered to be the first occurrence.
+                begin_time = a_date.tz_localize(tz_name, ambiguous=True)
+
+            end_time = begin_time + pd.Timedelta(days=1)
+
+            begin_time = begin_time.tz_convert('UTC').tz_convert(None)
+            end_time = end_time.tz_convert('UTC').tz_convert(None)
+
+            # Create mask of observations that fall within specified local calendar day
+            # and subset observations by mask
+            mask_day = ((obs_tz.index >= begin_time) &
+                        (obs_tz.index < end_time))
+            obs_tz_day = obs_tz[mask_day]
+
+            # Group observations by station_id, day, and hour
+            obs_grped_hrs_stnid = obs_tz_day.groupby([obs_tz_day.station_id,
+                                                      obs_tz_day.index.hour,
+                                                      obs_tz_day.index.day])
+
+            return self._dly_elem.transform_to_daily(obs_tz, a_date,
+                                                     obs_grped_hrs_stnid)
+
         for a_date in self._dates:
 
-            df_dly = grp_tz.apply(self._dly_elem.transform_to_daily,
-                                  a_date=a_date)
+            df_dly = grp_tz.apply(transform_to_daily, a_date=a_date)
             df_dly.index = df_dly.index.droplevel(0)
             df_dly = df_dly.reset_index(drop=True)
             all_obs.append(df_dly)
@@ -1620,18 +1448,17 @@ class MadisObsIO(ObsIO):
         def _wget_madis_file(url, path_local, usrname, passwd):
 
             print "WGET: Downloading %s to %s..." % (url, path_local)
-            
+
             if usrname and passwd:
-            
+
                 subprocess.call(['wget', '-N', '--no-check-certificate', '--quiet',
                                  '--user=%s' % usrname, '--password=%s' % passwd,
                                  url, '-P%s' % path_local])
-                
+
             else:
-                
+
                 subprocess.call(['wget', '-N', '--no-check-certificate',
                                  '--quiet', url, '-P%s' % path_local])
-                
 
         for a_dspath in self.madis_datasets:
 
