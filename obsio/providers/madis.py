@@ -1,6 +1,6 @@
 from .. import LOCAL_DATA_PATH
 from ..util.humidity import calc_dew
-from ..util.misc import TimeZones
+from ..util.misc import TimeZones, uniquify
 from .generic import ObsIO
 from StringIO import StringIO
 from datetime import datetime, timedelta
@@ -64,7 +64,7 @@ def _mkdir_p(path):
             raise
 
 
-def _madis_file_to_df(fpath, dly_elem, bbox):
+def _madis_file_to_df(fpath, dly_elem, bbox, temp_path):
 
     def get_transform_func(ds):
 
@@ -99,9 +99,7 @@ def _madis_file_to_df(fpath, dly_elem, bbox):
 
             # read tempfile
             gzfile = gzip.open(fpath)
-            path_tmp = os.path.join(LOCAL_DATA_PATH, 'tmp')
-            _mkdir_p(path_tmp)
-            tmpfile, fpath_tmp = tempfile.mkstemp(dir=path_tmp)
+            tmpfile, fpath_tmp = tempfile.mkstemp(dir=temp_path)
             tmpfile = os.fdopen(tmpfile, 'rb+')
             tmpfile.write(gzfile.read())
             gzfile.close()
@@ -138,10 +136,23 @@ def _madis_file_to_df(fpath, dly_elem, bbox):
 
 def _process_one_path_mp(args):
 
-    path, dly_elem, bbox = args
+    path, dly_elem, bbox, temp_path = args
 
-    return _madis_file_to_df(path, dly_elem, bbox)
+    return _madis_file_to_df(path, dly_elem, bbox, temp_path)
 
+def _uniquify(items):
+    seen = set()
+
+    for item in items:
+        fudge = 1
+        newitem = item
+
+        while newitem in seen:
+            fudge += 1
+            newitem = "{}_{}".format(item, fudge)
+
+        yield newitem
+        seen.add(newitem)
 
 class _DailyElem(object):
 
@@ -1076,7 +1087,8 @@ class MadisObsIO(ObsIO):
 
     def __init__(self, local_data_path=None, data_version=None, username=None,
                  password=None, madis_datasets=None, local_time_zones=None,
-                 min_hrly_for_dly=None, nprocs=1, **kwargs):
+                 min_hrly_for_dly=None, nprocs=1, temp_path=None,
+                 handle_dups=True, **kwargs):
 
         super(MadisObsIO, self).__init__(**kwargs)
 
@@ -1104,6 +1116,13 @@ class MadisObsIO(ObsIO):
         self._password = password
         self._url_base_madis = _URL_BASE_MADIS % self.data_version
         self.nprocs = nprocs
+        self.handle_dups = handle_dups
+        
+        self.temp_path = (temp_path if temp_path
+                          else os.path.join(LOCAL_DATA_PATH, 'tmp'))
+        
+        if not os.path.isdir(self.temp_path):
+            os.mkdir(self.temp_path)
 
         path_madis_data = os.path.join(self.local_data_path, 'MADIS')
 
@@ -1212,8 +1231,8 @@ class MadisObsIO(ObsIO):
 
                 pool = Pool(processes=self.nprocs)
 
-                iter_fpaths = [(a_fpath, self._dly_elem, self.bbox) for
-                               a_fpath in fpaths_fnd]
+                iter_fpaths = [(a_fpath, self._dly_elem, self.bbox,
+                                self.temp_path) for a_fpath in fpaths_fnd]
 
                 datasets = pool.map(_process_one_path_mp,
                                     iter_fpaths, chunksize=1)
@@ -1222,7 +1241,8 @@ class MadisObsIO(ObsIO):
 
             else:
 
-                datasets = [_madis_file_to_df(p, self._dly_elem, self.bbox)
+                datasets = [_madis_file_to_df(p, self._dly_elem, self.bbox,
+                                              self.temp_path)
                             for p in fpaths_fnd]
 
             combined = pd.concat(datasets)
@@ -1269,15 +1289,42 @@ class MadisObsIO(ObsIO):
         mask_dup_id = stns.duplicated(['station_id'], take_last=True)
 
         if mask_dup_id.any():
-
+            
             ndups = mask_dup_id.sum()
-
-            print ("Warning: MadisObsIO: Found %d stations whose location "
-                   "information changed during dates being processed. Only the"
-                   " most recent location information for these stations will"
-                   " be returned." % ndups)
-
-            stns = stns[~mask_dup_id]
+            
+            if self.handle_dups:
+                
+                print ("Warning: MadisObsIO: Found %d stations whose location "
+                       "information changed during dates being processed. Deduping "
+                       "station ids..." % ndups)
+                
+                uniq_stnids = np.array(list(uniquify(stns.station_id.values)))
+                
+                for a_stn,new_id in zip(stns[mask_dup_id].iterrows(),
+                                        uniq_stnids[mask_dup_id.values]):
+                    
+                    a_stn = a_stn[1]
+                    
+                    obs_mask = (a_stn[_UNIQ_STN_COLUMNS[0]] ==
+                                self._df_obs[_UNIQ_STN_COLUMNS[0]])
+                    
+                    for a_col in _UNIQ_STN_COLUMNS[1:]:
+                        
+                        obs_mask = ((obs_mask) & 
+                                    (a_stn[a_col] == self._df_obs[a_col]))
+                    
+                    self._df_obs.loc[obs_mask,'station_id'] = new_id
+                
+                stns['station_id'] = uniq_stnids
+                    
+            else:
+                
+                print ("Warning: MadisObsIO: Found %d stations whose location "
+                       "information changed during dates being processed. Only the"
+                       " most recent location information for these stations will"
+                       " be returned." % ndups)
+    
+                stns = stns[~mask_dup_id]
 
         stns = stns.set_index('station_id', drop=False)
 
@@ -1293,8 +1340,6 @@ class MadisObsIO(ObsIO):
         stns['station_name'] = stns.station_name.apply(to_unicode)
 
         self._tz.set_tz(stns)
-
-        #stns['uid'] = np.arange(len(stns))
 
         return stns
 

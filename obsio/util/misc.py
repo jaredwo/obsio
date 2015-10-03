@@ -124,3 +124,20 @@ def grt_circle_dist(lon1,lat1,lon2,lat2):
     #distDeg = centralangle/RADIAN_CONVERSION_FACTOR
     distKm = _AVG_EARTH_RADIUS_KM * centralangle 
     return distKm
+
+def uniquify(items, fudge_start=1, dup_format='_dup%.2d'):
+    # http://stackoverflow.com/questions/19071622/
+    # automatically-rename-columns-to-ensure-they-are-unique
+    seen = set()
+    dup_format = "%s"+dup_format
+
+    for item in items:
+        fudge = fudge_start-1
+        newitem = item
+
+        while newitem in seen:
+            fudge += 1
+            newitem = dup_format%(item,fudge)
+
+        yield newitem
+        seen.add(newitem)

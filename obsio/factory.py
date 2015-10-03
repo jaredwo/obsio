@@ -141,7 +141,8 @@ class ObsIoFactory(object):
     def create_obsio_dly_madis(self, local_data_path=None, data_version=None,
                                username=None, password=None,
                                madis_datasets=None, local_time_zones=None,
-                               min_hrly_for_dly=None, nprocs=1):
+                               min_hrly_for_dly=None, nprocs=1,
+                               temp_path=None, handle_dups=True):
         """Create ObsIO to access daily observations from MADIS.
 
         MADIS (Meteorological Assimilation Data Ingest System) is a 
@@ -215,7 +216,25 @@ class ObsIoFactory(object):
             The number of processes to use. Increasing the processor count 
             can decrease the time required to decompress and load the MADIS
             hourly netCDF files.
-
+        temp_path : str, optional
+            Temporary directory to decompress MADIS netCDF files for reading
+            if they cannot be decompressed on the fly. If not specified,
+            will use a 'tmp' directory in the local_data_path. MADIS data are 
+            provided in externally gzipped netCDF3 files. These files can 
+            typically be decompressed on the fly, but in some instance on the
+            fly decompression fails. In these cases, the netCDF3 file will be
+            temporarly decompressed to temp_path and read into memory.
+        handle_dups : boolean, optional
+            Handle duplicate station ids. Default: True. In MADIS, a specific
+            station's location is allowed to change, but the station still 
+            retains the same station id. If a station location changes during
+            the dates being processed and handle_dups is True, the new location
+            of the station will be considered a new station and '_dup##' will
+            be appended to the station id. If handle_dups is False, only the
+            latest location information for the station will be returned
+            and all observations for the station will be associated with this
+            latest location.
+              
         Returns
         ----------
         obsio.ObsIO
@@ -229,7 +248,8 @@ class ObsIoFactory(object):
                           min_hrly_for_dly=min_hrly_for_dly,
                           elems=self.elems, bbox=self.bbox,
                           start_date=self.start_date, end_date=self.end_date,
-                          nprocs=nprocs)
+                          nprocs=nprocs, temp_path=temp_path,
+                          handle_dups=handle_dups)
 
     def create_obsio_dly_isdlite(self, local_data_path=None,
                                  min_hrly_for_dly=None):
