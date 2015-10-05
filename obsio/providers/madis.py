@@ -16,6 +16,7 @@ import os
 import pandas as pd
 import pycurl
 import pytz
+import string
 import subprocess
 import sys
 import tempfile
@@ -51,6 +52,9 @@ _DSNAME_TO_TRANSFORM = {'mesonet': '_to_dataframe_MADIS_MESONET',
                         'coop': '_to_dataframe_MADIS_COOP',
                         'sao': '_to_dataframe_MADIS_SAO'}
 
+_STR_PRINTABLE = set(string.printable)
+
+_is_printable = lambda x: x in _STR_PRINTABLE
 _k_to_c = lambda k: k - 273.15
 
 
@@ -140,6 +144,7 @@ def _process_one_path_mp(args):
 
     return _madis_file_to_df(path, dly_elem, bbox, temp_path)
 
+
 def _uniquify(items):
     seen = set()
 
@@ -153,6 +158,7 @@ def _uniquify(items):
 
         yield newitem
         seen.add(newitem)
+
 
 class _DailyElem(object):
 
@@ -638,13 +644,13 @@ class _Prcp(_DailyElem):
 
             # Calculate first difference of precipAccum at each station to get
             # precipitation deltas
-            prcp_accum = df[['station_id', 'precipAccum']].copy()
+            prcp_accum = df[['station_id', 'precipAccum']].reset_index()
             prcp_accum['uid'] = np.arange(len(prcp_accum))
-            prcp_accum = prcp_accum.set_index([prcp_accum.station_id,
-                                               prcp_accum.index])
-            prcp_accum = prcp_accum.sortlevel(0, sort_remaining=True)
+            prcp_accum['station_id'] = prcp_accum[
+                'station_id'].astype('category')
+            prcp_accum.sort(columns=['station_id', 'time'], inplace=True)
 
-            prcp_delta = (prcp_accum.groupby(level=0)[['precipAccum']].
+            prcp_delta = (prcp_accum.groupby('station_id')[['precipAccum']].
                           transform(lambda x: x.diff()))
             prcp_delta['uid'] = prcp_accum['uid']
             prcp_delta.rename(columns={'precipAccum': 'precipAccumDelta'},
@@ -857,6 +863,8 @@ def _to_dataframe_MADIS_METAR(ds, dly_elem, bbox=None):
 
     dly_elem.mask_qa(df, rm_inplace=True)
 
+    df['station_id'] = df.station_id.apply(lambda s: filter(_is_printable, s))
+
     return df
 
 
@@ -906,6 +914,8 @@ def _to_dataframe_MADIS_SAO(ds, dly_elem, bbox=None):
         df = bbox.remove_outbnds_df(df)
 
     dly_elem.mask_qa(df, rm_inplace=True)
+
+    df['station_id'] = df.station_id.apply(lambda s: filter(_is_printable, s))
 
     return df
 
@@ -965,6 +975,8 @@ def _to_dataframe_MADIS_MESONET(ds, dly_elem, bbox=None):
         df = bbox.remove_outbnds_df(df)
 
     dly_elem.mask_qa(df, rm_inplace=True)
+
+    df['station_id'] = df.station_id.apply(lambda s: filter(_is_printable, s))
 
     return df
 
@@ -1038,6 +1050,8 @@ def _to_dataframe_MADIS_COOP(ds, dly_elem, bbox=None):
         df = bbox.remove_outbnds_df(df)
 
     dly_elem.mask_qa(df, rm_inplace=True)
+
+    df['station_id'] = df.station_id.apply(lambda s: filter(_is_printable, s))
 
     return df
 
@@ -1117,10 +1131,10 @@ class MadisObsIO(ObsIO):
         self._url_base_madis = _URL_BASE_MADIS % self.data_version
         self.nprocs = nprocs
         self.handle_dups = handle_dups
-        
+
         self.temp_path = (temp_path if temp_path
                           else os.path.join(LOCAL_DATA_PATH, 'tmp'))
-        
+
         if not os.path.isdir(self.temp_path):
             os.mkdir(self.temp_path)
 
@@ -1266,9 +1280,24 @@ class MadisObsIO(ObsIO):
             self._df_obs.reset_index(inplace=True)
 
             self._a_df_obs = self._df_obs.merge(self.stns[['station_id',
+                                                           'station_id_orig',
+                                                           'elevation',
+                                                           'longitude',
+                                                           'latitude',
                                                            'time_zone']],
-                                                on='station_id', how='left',
-                                                sort=False)
+                                                left_on=['station_id',
+                                                         'elevation',
+                                                         'longitude',
+                                                         'latitude'],
+                                                right_on=['station_id_orig',
+                                                          'elevation',
+                                                          'longitude',
+                                                          'latitude'],
+                                                how='left', sort=False)
+
+            self._a_df_obs.drop('station_id_x', axis=1, inplace=True)
+            self._a_df_obs.rename(columns={'station_id_y': 'station_id'},
+                                  inplace=True)
 
             self._a_df_obs.set_index('time', inplace=True)
             self._dly_elem.convert_units(self._a_df_obs)
@@ -1286,44 +1315,30 @@ class MadisObsIO(ObsIO):
 
         stns = (self._df_obs.loc[~mask_dup, stn_cols].reset_index(drop=True))
 
+        stns['station_id_orig'] = stns['station_id']
+
         mask_dup_id = stns.duplicated(['station_id'], take_last=True)
 
         if mask_dup_id.any():
-            
+
             ndups = mask_dup_id.sum()
-            
+
             if self.handle_dups:
-                
+
                 print ("Warning: MadisObsIO: Found %d stations whose location "
-                       "information changed during dates being processed. Deduping "
+                       "information changed during dates being processed. Will dedupe "
                        "station ids..." % ndups)
-                
+
                 uniq_stnids = np.array(list(uniquify(stns.station_id.values)))
-                
-                for a_stn,new_id in zip(stns[mask_dup_id].iterrows(),
-                                        uniq_stnids[mask_dup_id.values]):
-                    
-                    a_stn = a_stn[1]
-                    
-                    obs_mask = (a_stn[_UNIQ_STN_COLUMNS[0]] ==
-                                self._df_obs[_UNIQ_STN_COLUMNS[0]])
-                    
-                    for a_col in _UNIQ_STN_COLUMNS[1:]:
-                        
-                        obs_mask = ((obs_mask) & 
-                                    (a_stn[a_col] == self._df_obs[a_col]))
-                    
-                    self._df_obs.loc[obs_mask,'station_id'] = new_id
-                
                 stns['station_id'] = uniq_stnids
-                    
+
             else:
-                
+
                 print ("Warning: MadisObsIO: Found %d stations whose location "
                        "information changed during dates being processed. Only the"
                        " most recent location information for these stations will"
                        " be returned." % ndups)
-    
+
                 stns = stns[~mask_dup_id]
 
         stns = stns.set_index('station_id', drop=False)
