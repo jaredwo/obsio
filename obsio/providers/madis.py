@@ -776,11 +776,27 @@ class _MultiElem(_DailyElem):
 
         for a_dly_elem in self._dly_elems:
             a_dly_elem.convert_units(df)
-
+    
+    
+    def _transform_elem(self, a_elem, obs_tz, a_date, obs_grped_hrs_stnid):
+        
+        try:
+            
+            return a_elem.transform_to_daily(obs_tz, a_date,
+                                             obs_grped_hrs_stnid)
+        
+        except KeyError as e:
+        
+            if e.args[0].startswith('Columns not found'):
+                #Element does not exist in loaded data
+                return None
+            else:
+                raise
+    
     def transform_to_daily(self, obs_tz, a_date, obs_grped_hrs_stnid):
 
-        all_obs = [a_elem.transform_to_daily(obs_tz, a_date,
-                                             obs_grped_hrs_stnid)
+        all_obs = [self._transform_elem(a_elem, obs_tz,
+                                       a_date, obs_grped_hrs_stnid)
                    for a_elem in self._dly_elems]
 
         all_obs = pd.concat(all_obs, ignore_index=True)
