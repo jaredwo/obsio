@@ -3,6 +3,7 @@ from .providers.ghcnd import GhcndObsIO
 from .providers.isd import IsdLiteObsIO
 from .providers.madis import MadisObsIO
 from .providers.nrcs import NrcsObsIO
+from .providers.ushcn import UshcnObsIO
 
 
 class ObsIoFactory(object):
@@ -28,6 +29,28 @@ class ObsIoFactory(object):
             - 'tobs_tmin' : time-of-observation for daily tmin (local hr)
             - 'tobs_tmax' : time-of-observation for daily tmax (local hr)
             - 'tobs_prcp' : time-of-observation for daily prcp (local hr)
+            - 'tmin_mth_raw' : original, raw monthly average minimum
+                               temperature (C; USHCN specific)
+            - 'tmin_mth_tob' : time-of-observation adjusted monthly average minimum
+                               temperature (C; USHCN specific)
+            - 'tmin_mth_fls' : homogenized and infilled monthly average minimum
+                               temperature (C; USHCN specific)
+            - 'tmax_mth_raw' : original, raw monthly average maximum
+                               temperature (C; USHCN specific)
+            - 'tmax_mth_tob' : time-of-observation adjusted monthly average maximum
+                               temperature (C; USHCN specific)
+            - 'tmax_mth_fls' : homogenized and infilled monthly average maximum
+                               temperature (C; USHCN specific)
+            - 'tavg_mth_raw' : original, raw monthly average
+                               temperature (C; USHCN specific)
+            - 'tavg_mth_tob' : time-of-observation adjusted monthly average
+                               temperature (C; USHCN specific)
+            - 'tavg_mth_fls' : homogenized and infilled monthly average
+                               temperature (C; USHCN specific)
+            - 'prcp_mth_raw' : original, raw monthly total precipitation
+                               (mm; USHCN specific)
+            - 'prcp_mth_fls' : homogenized and infilled monthly total
+                               precipitation (mm; USHCN specific)
             Not all elements are available for every ObsIO data source.
         bbox : obsio.BBox, optional
             Lat/lon bounding box of desired spatial domain. Only stations and 
@@ -134,6 +157,55 @@ class ObsIoFactory(object):
         """
 
         return GhcndObsIO(local_data_path=local_data_path,
+                          elems=self.elems, bbox=self.bbox,
+                          start_date=self.start_date,
+                          end_date=self.end_date)
+
+    def create_obsio_mthly_ushcn(self, local_data_path=None):
+        """Create ObsIO to access monthly observations from NCEI's USHCN.
+
+        NOAA's National Centers for Environmental Information (NCEI) U.S.
+        Historical Climatology Network (USHCN) is a subset of the Cooperative
+        Observer Network (COOP) and is used to quantify national and regional
+        scale temperature changes in the contiguous U.S. USHCN sites were 
+        selected according to their spatial coverage, record length, data
+        completeness, and historical stability. USHCN is a monthly dataset. 
+        USCHN details: http://www.ncdc.noaa.gov/oa/climate/research/ushcn/
+        This ObsIO accesses USHCN observations via the USHCN FTP site: 
+        ftp://ftp.ncdc.noaa.gov/pub/data/ushcn/
+        Currently available elements:
+        - 'tmin_mth_raw' : original, raw monthly average minimum temperature (C)
+        - 'tmin_mth_tob' : time-of-observation adjusted monthly average minimum
+                           temperature (C)
+        - 'tmin_mth_fls' : homogenized and infilled monthly average minimum
+                           temperature (C)
+        - 'tmax_mth_raw' : original, raw monthly average maximum temperature (C)
+        - 'tmax_mth_tob' : time-of-observation adjusted monthly average maximum
+                           temperature (C)
+        - 'tmax_mth_fls' : homogenized and infilled monthly average maximum
+                           temperature (C)
+        - 'tavg_mth_raw' : original, raw monthly average temperature (C)
+        - 'tavg_mth_tob' : time-of-observation adjusted monthly average temperature (C)
+        - 'tavg_mth_fls' : homogenized and infilled monthly average temperature (C)
+        - 'prcp_mth_raw' : original, raw monthly total precipitation (mm)
+        - 'prcp_mth_fls' : homogenized and infilled monthly total precipitation (mm)
+                           
+        Parameters
+        ----------
+        local_data_path : str, optional
+            The local path for downloading and storing USHCN data from the
+            FTP site. If not specified, will use and create a USHCN directory
+            in the path specified by the OBSIO_DATA environmental variable. If
+            OBSIO_DATA is not set, a default temporary path will be used. On
+            a call to obsio.ObsIO.download_local(), the ObsIO locally mirrors
+            the USHCN FTP site.
+
+        Returns
+        ----------
+        obsio.ObsIO
+        """
+
+        return UshcnObsIO(local_data_path=local_data_path,
                           elems=self.elems, bbox=self.bbox,
                           start_date=self.start_date,
                           end_date=self.end_date)
