@@ -170,7 +170,7 @@ class ObsIoFactory(object):
         scale temperature changes in the contiguous U.S. USHCN sites were 
         selected according to their spatial coverage, record length, data
         completeness, and historical stability. USHCN is a monthly dataset. 
-        USCHN details: http://www.ncdc.noaa.gov/oa/climate/research/ushcn/
+        USHCN details: http://www.ncdc.noaa.gov/oa/climate/research/ushcn/
         This ObsIO accesses USHCN observations via the USHCN FTP site: 
         ftp://ftp.ncdc.noaa.gov/pub/data/ushcn/
         Currently available elements:
