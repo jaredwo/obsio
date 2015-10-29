@@ -67,7 +67,7 @@ ISDLite_      tmin,tmax,tdew                               Yes
 GHCN-D_       tmin,tmax,prcp,tobs_tmin,tobs_tmax,tobs_prcp Yes
 MADIS_        tmin,tmax,prcp,tdew,prcp,srad,wspd           Yes
 NRCS_         tmin,tmax,prcp,snwd,swe                      No
-USHCN_		  \*_mth_raw,\*_mth_tob,\*_mth_fls             Yes
+USHCN_	      \*\_mth_raw,\*\_mth_tob,\*\_mth_fls          Yes
 ============= ============================================ ===================
 
 Element definitions:
@@ -83,20 +83,32 @@ Element definitions:
 * tobs_tmin : time-of-observation for daily tmin (local hr)
 * tobs_tmax : time-of-observation for daily tmax (local hr)
 * tobs_prcp : time-of-observation for daily prcp (local hr)
-* \*_mth_raw : USHCN-specific elements. Original, raw monthly elements:
-			   tmin_mth_raw (C), tmax_mth_raw (C), tavg_mth_raw (C),
-			   prcp_mth_raw (mm)
+* \*_mth_raw : USHCN-specific elements. Original, raw monthly elements: 
+
+  * tmin_mth_raw (C)
+  * tmax_mth_raw (C)
+  * tavg_mth_raw(C)
+  * prcp_mth_raw (mm)
+
 * \*_mth_tob : USHCN-specific elements. Time-of-observation adjusted elements:
-			   tmin_mth_tob (C), tmax_mth_tob (C), tavg_mth_tob (C)
+
+  * tmin_mth_tob (C)
+  * tmax_mth_tob (C)
+  * tavg_mth_tob (C)
+
 * \*_mth_fls : USHCN-specific elements. Homogenized and infilled elements:
-			   tmin_mth_fls (C), tmax_mth_fls (C), tavg_mth_fls (C),
-			   prcp_mth_fls (mm)
+  
+  * tmin_mth_fls (C)
+  * tmax_mth_fls (C)
+  * tavg_mth_fls (C)
+  * prcp_mth_fls (mm)
 
 .. _ACIS: http://www.rcc-acis.org/
 .. _ISDLite: https://www.ncdc.noaa.gov/isd
 .. _GHCN-D: https://www.ncdc.noaa.gov/oa/climate/ghcn-daily/
 .. _MADIS: https://madis.noaa.gov/
 .. _NRCS: http://www.wcc.nrcs.usda.gov/web_service/AWDB_Web_Service_Reference.htm
+.. _USHCN: http://www.ncdc.noaa.gov/oa/climate/research/ushcn/
 
 Usage
 =============
