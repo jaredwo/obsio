@@ -4,6 +4,7 @@ from .providers.isd import IsdLiteObsIO
 from .providers.madis import MadisObsIO
 from .providers.nrcs import NrcsObsIO
 from .providers.ushcn import UshcnObsIO
+from .providers.wrcc import WrccRawsObsIO
 
 
 class ObsIoFactory(object):
@@ -365,3 +366,32 @@ class ObsIoFactory(object):
                             elems=self.elems, bbox=self.bbox,
                             start_date=self.start_date,
                             end_date=self.end_date)
+
+    def create_obsio_dly_wrcc_raws(self, nprocs=1):
+        """Create ObsIO to access daily observations from WRCC RAWS.
+
+        The Western Regional Climate Center (WRCC; http://www.wrcc.dri.edu)
+        provides observations from the Remote Automated Weather Stations (RAWS)
+        network (http://www.raws.dri.edu). This ObsIO accesses daily
+        observations directly from the WRCC RAWS daily webform. It does not
+        require data to be stored locally. Currently available elements:
+        - 'tmin' : daily minimum temperature (C)
+        - 'tmax' : daily maximum temperature (C)
+        - 'prcp' : daily total precipitation (mm)
+        - 'srad' : daily 24-hr average incoming solar radiation (w m-2)
+        - 'wspd' : daily average windspeed (m s-1)
+
+        Parameters
+        ----------
+        nprocs : int, optional
+            The number of concurrent processes to use for downloading
+            observations from the WRCC RAWS webform. Default: 1
+
+        Returns
+        ----------
+        obsio.ObsIO
+        """
+
+        return WrccRawsObsIO(nprocs=nprocs, elems=self.elems, bbox=self.bbox,
+                             start_date=self.start_date,
+                             end_date=self.end_date)

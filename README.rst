@@ -63,11 +63,12 @@ time, but hourly and sub-hourly can easily be added.
 Provider Name Currently Supported Elements                 Req. Local Storage?
 ============= ============================================ ===================
 ACIS_	      tmin,tmax,prcp,tobs_tmin,tobs_tmax,tobs_prcp No
-ISDLite_      tmin,tmax,tdew                               Yes
 GHCN-D_       tmin,tmax,prcp,tobs_tmin,tobs_tmax,tobs_prcp Yes
-MADIS_        tmin,tmax,prcp,tdew,prcp,srad,wspd           Yes
+ISDLite_      tmin,tmax,tdew                               Yes
+MADIS_        tmin,tmax,prcp,tdew,srad,wspd                Yes
 NRCS_         tmin,tmax,prcp,snwd,swe                      No
 USHCN_	      \*\_mth_raw,\*\_mth_tob,\*\_mth_fls          Yes
+WRCC_		  tmin,tmax,prcp,srad,wspd                     No
 ============= ============================================ ===================
 
 Element definitions:
@@ -104,11 +105,12 @@ Element definitions:
   * prcp_mth_fls (mm)
 
 .. _ACIS: http://www.rcc-acis.org/
-.. _ISDLite: https://www.ncdc.noaa.gov/isd
 .. _GHCN-D: https://www.ncdc.noaa.gov/oa/climate/ghcn-daily/
+.. _ISDLite: https://www.ncdc.noaa.gov/isd
 .. _MADIS: https://madis.noaa.gov/
 .. _NRCS: http://www.wcc.nrcs.usda.gov/web_service/AWDB_Web_Service_Reference.htm
 .. _USHCN: http://www.ncdc.noaa.gov/oa/climate/research/ushcn/
+.. _WRCC: http://www.raws.dri.edu/
 
 Usage
 =============
