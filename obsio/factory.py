@@ -367,7 +367,7 @@ class ObsIoFactory(object):
                             start_date=self.start_date,
                             end_date=self.end_date)
 
-    def create_obsio_dly_wrcc_raws(self, nprocs=1):
+    def create_obsio_dly_wrcc_raws(self, nprocs=1, hrly_pwd=None):
         """Create ObsIO to access daily observations from WRCC RAWS.
 
         The Western Regional Climate Center (WRCC; http://www.wrcc.dri.edu)
@@ -377,6 +377,7 @@ class ObsIoFactory(object):
         require data to be stored locally. Currently available elements:
         - 'tmin' : daily minimum temperature (C)
         - 'tmax' : daily maximum temperature (C)
+        - 'tdew' : daily average dewpoint (C)
         - 'prcp' : daily total precipitation (mm)
         - 'srad' : daily 24-hr average incoming solar radiation (w m-2)
         - 'wspd' : daily average windspeed (m s-1)
@@ -386,12 +387,21 @@ class ObsIoFactory(object):
         nprocs : int, optional
             The number of concurrent processes to use for downloading
             observations from the WRCC RAWS webform. Default: 1
-
+        hrly_pwd : str, optional
+            Password for accessing hourly RAWS observations to get a more 
+            accurate estimate of daily average dewpoint. Daily RAWS 
+            observations from WRCC are free, but historical RAWS hourly 
+            observations are "restricted". Daily humidity is only provided as
+            relative humidity. To convert to daily average dewpoint, the ObsIO
+            uses daily average temperature and relative humidity by default.
+            However, if hrly_pwd is passed, the ObsIO will access the hourly
+            webform to get a more accurate estimate of daily average dewpoint.   
+        
         Returns
         ----------
         obsio.ObsIO
         """
 
-        return WrccRawsObsIO(nprocs=nprocs, elems=self.elems, bbox=self.bbox,
-                             start_date=self.start_date,
+        return WrccRawsObsIO(nprocs=nprocs, hrly_pwd=hrly_pwd, elems=self.elems,
+                             bbox=self.bbox, start_date=self.start_date,
                              end_date=self.end_date)

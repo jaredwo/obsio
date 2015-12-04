@@ -1,7 +1,9 @@
 from .generic import ObsIO
+from StringIO import StringIO
 from calendar import monthrange
 from datetime import datetime
 from multiprocessing import Pool
+from obsio.util.humidity import calc_dew
 import numpy as np
 import os
 import pandas as pd
@@ -10,8 +12,11 @@ import urllib
 import urllib2
 
 _URL_RAWS_DLY_TIME_SERIES = "http://www.raws.dri.edu/cgi-bin/wea_dysimts.pl?"
+_URL_RAWS_DLY_TIME_SERIES2 = 'http://www.raws.dri.edu/cgi-bin/wea_dysimts2.pl'
+_URL_RAWS_HRLY_TIME_SERIES = "http://www.raws.dri.edu/cgi-bin/wea_list2.pl"
 _URL_RAWS_STN_METADATA = "http://www.raws.dri.edu/cgi-bin/wea_info.pl?"
-_URL_RAWS_STN_METADATA2 = 'http://www.raws.dri.edu/cgi-bin/wea_dysimts2.pl'
+
+_f_to_c = lambda f: (f - 32.0) / 1.8
 
 def _parse_raws_metadata(stn_id):
         
@@ -150,11 +155,63 @@ def _build_raws_stn_metadata(nprocs):
     stn_meta['longitude'] = -stn_meta.longitude
     
     return stn_meta
-    
 
+def _parse_raws_hrly_tdew(stn_id, start_date, end_date, pwd):
+    
+    values = {'smon': start_date.strftime("%m"),
+              'sday': start_date.strftime("%d"),
+              'syea': start_date.strftime("%y"),
+              'emon': end_date.strftime("%m"),
+              'eday': end_date.strftime("%d"),
+              'eyea': end_date.strftime("%y"),
+              'secret' : pwd,
+              'pcodes' : ["AVA", "AVR"],
+              'lim': "Y",
+              'dfor':'01',
+              'srce':"W",
+              'miss': '08',  # -9999
+              'flag':'N',
+              'Dfmt':'02',
+              'Tfmt':'01',
+              'Head':'01',
+              'Deli':'01',
+              # english units. Hourly form always returns English even if metric
+              # is selected. Set to english to be safe and perform conversion
+              # locally
+              'unit': 'E',
+              "Submit Info": "Submit Info",
+              'stn': stn_id,
+              'WsMon': '01',
+              'WsDay': '01',
+              'WeMon': '12',
+              'WeDay': '31',
+              'WsHou': '00',
+              'WeHou': '24'}
+    
+    data = urllib.urlencode(values, doseq=True)
+    req = urllib2.Request(_URL_RAWS_HRLY_TIME_SERIES, data)
+    response = urllib2.urlopen(req)
+    lines = response.readlines()
+    
+    obs = pd.read_csv(StringIO("".join(lines[16:-14])), delim_whitespace=True)
+    
+    obs.rename(columns={':YYYYMMDDhhmm':'time', 'Temp':'tair', 'Humidty':'rh'},
+               inplace=True)
+    obs.replace(-9999, np.nan, inplace=True)
+    obs['time'] = pd.to_datetime(obs.time, format="%Y%m%d%H%M")
+    obs['tair'] = _f_to_c(obs.tair)
+    obs['tdew'] = calc_dew(obs.rh, obs.tair)
+    obs.set_index('time', inplace=True)
+    
+    # Resample to daily average. The how method is used to set any days with
+    # missing hourly observations to na
+    tdew_dly = obs.tdew.resample('D', how=lambda x: x.values.mean())
+    
+    return tdew_dly
+    
 def _parse_raws_webform(args):
         
-    stn_id, elems, start_date, end_date = args
+    stn_id, elems, hrly_pwd, start_date, end_date = args
     
     values = {'smon': start_date.strftime("%m"),
               'sday': start_date.strftime("%d"),
@@ -169,14 +226,14 @@ def _parse_raws_webform(args):
               'qc': 'Y',
               'miss': '08',  # -9999
               "Submit Info": "Submit Info",
-              'stn': stn_id[2:],
+              'stn': stn_id,
               'WsMon': '01',
               'WsDay': '01',
               'WeMon': '12',
               'WeDay': '31'}
 
     data = urllib.urlencode(values)
-    req = urllib2.Request(_URL_RAWS_STN_METADATA2, data)
+    req = urllib2.Request(_URL_RAWS_DLY_TIME_SERIES2, data)
     response = urllib2.urlopen(req)
     lines = response.readlines()
     
@@ -206,22 +263,43 @@ def _parse_raws_webform(args):
 
             srad = float(vals[4])
             wspd = float(vals[5])
+            tavg = float(vals[8])
             tmax = float(vals[9])
             tmin = float(vals[10])
+            rh_avg = float(vals[11])
             prcp = float(vals[14])
 
-            obs_ls.append((a_date, srad, wspd, tmin, tmax, prcp))
+            obs_ls.append((a_date, srad, wspd, tavg, tmax, tmin, rh_avg, prcp))
 
-    obs = pd.DataFrame(obs_ls, columns=['time', 'srad', 'wspd', 'tmin',
-                                        'tmax', 'prcp'])
+    obs = pd.DataFrame(obs_ls, columns=['time', 'srad', 'wspd', 'tavg', 'tmax',
+                                        'tmin', 'rh_avg', 'prcp'])
     obs.set_index('time', inplace=True)
+    obs.replace(-9999, np.nan, inplace=True)
     
     # convert kWhr to average watts for the day
     obs['srad'] = (obs.srad * 3.6e+6) / 86400
+    # calculate tdew from rh_avg and tavg
+    obs['tdew'] = calc_dew(obs.rh_avg, obs.tavg)
+    
+    # Recalculate tdew from hourly observations if hrly_pwd available
+    if 'tdew' in elems and hrly_pwd:
+        
+        try:
+            
+            tdew = _parse_raws_hrly_tdew(stn_id, start_date, end_date, hrly_pwd)
+            obs = obs.join(tdew, how='outer', lsuffix='_old')
+            obs.drop('tdew_old', axis=1, inplace=True)
+        
+        except ValueError:
+            # No valid hourly observations
+            
+            if not obs.tdew.empty:
+                
+                print ("Warning: Could not access hourly humidity observations "
+                       "for station %s. Reverting to daily RHavg + Tavg for "
+                       "Tdew calculation ") % stn_id
     
     obs = obs[elems].copy()
-    
-    obs.replace(-9999, np.nan, inplace=True)
     
     obs = obs.stack().reset_index()
     obs.rename(columns={'level_1':'elem', 0:'obs_value'},
@@ -232,13 +310,14 @@ def _parse_raws_webform(args):
 
 class WrccRawsObsIO(ObsIO):
 
-    _avail_elems = ['tmin', 'tmax', 'prcp', 'srad', 'wspd']
+    _avail_elems = ['tmin', 'tmax', 'tdew', 'prcp', 'srad', 'wspd']
     _requires_local = False
 
-    def __init__(self, nprocs=1, **kwargs):
+    def __init__(self, nprocs=1, hrly_pwd=None, **kwargs):
 
         super(WrccRawsObsIO, self).__init__(**kwargs)
         self.nprocs = nprocs
+        self.hrly_pwd = hrly_pwd
 
     def _read_stns(self):
         
@@ -248,7 +327,7 @@ class WrccRawsObsIO(ObsIO):
         stns = pd.read_csv(fpath_stns)
         stns['start_date'] = pd.to_datetime(stns.start_date)
         stns['end_date'] = pd.to_datetime(stns.end_date)
-        
+        stns['station_id'] = stns.station_id.str[2:]
         stns['station_name'] = stns.station_name.apply(unicode, errors='ignore')
         stns['provider'] = 'WRCC'
         stns['sub_provider'] = 'RAWS'
@@ -290,12 +369,11 @@ class WrccRawsObsIO(ObsIO):
                 
             return start_date, end_date
         
-        iter_stns = [(stn_id, self.elems) + get_start_end(stn_id)
+        iter_stns = [(stn_id, self.elems, self.hrly_pwd) + get_start_end(stn_id)
                      for stn_id in stns_obs.station_id]
                 
         if nprocs > 1:
             
-            print "Multiprocessing!"
             # http://stackoverflow.com/questions/24171725/
             # scikit-learn-multicore-attributeerror-stdin-instance-
             # has-no-attribute-close
