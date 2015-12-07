@@ -10,6 +10,7 @@ import pandas as pd
 import sys
 import urllib
 import urllib2
+import warnings
 
 _URL_RAWS_DLY_TIME_SERIES = "http://www.raws.dri.edu/cgi-bin/wea_dysimts.pl?"
 _URL_RAWS_DLY_TIME_SERIES2 = 'http://www.raws.dri.edu/cgi-bin/wea_dysimts2.pl'
@@ -204,8 +205,12 @@ def _parse_raws_hrly_tdew(stn_id, start_date, end_date, pwd):
     obs.set_index('time', inplace=True)
     
     # Resample to daily average. The how method is used to set any days with
-    # missing hourly observations to na
-    tdew_dly = obs.tdew.resample('D', how=lambda x: x.values.mean())
+    # missing hourly observations to na. Ignore warnings on days with no valid
+    # values.
+    with warnings.catch_warnings():
+        
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        tdew_dly = obs.tdew.resample('D', how=lambda x: x.values.mean())
     
     return tdew_dly
     
@@ -365,7 +370,9 @@ class WrccRawsObsIO(ObsIO):
                 end_date = self.end_date
             else:
                 start_date = self.stns.loc[stn_id].start_date
-                end_date = self.stns.loc[stn_id].end_date
+                #Use current date for end date since end_date metadata
+                #might not be up-to-date
+                end_date = pd.Timestamp.now()
                 
             return start_date, end_date
         
