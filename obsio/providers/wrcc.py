@@ -199,7 +199,16 @@ def _parse_raws_hrly_tdew(stn_id, start_date, end_date, pwd):
     obs.rename(columns={':YYYYMMDDhhmm':'time', 'Temp':'tair', 'Humidty':'rh'},
                inplace=True)
     obs.replace(-9999, np.nan, inplace=True)
-    obs['time'] = pd.to_datetime(obs.time, format="%Y%m%d%H%M")
+    
+    obs['time'] = pd.to_datetime(obs.time, format="%Y%m%d%H%M", errors='coerce')
+    
+    if obs.time.isnull().any():
+        
+        # one or more dates had an incorrect format
+        # remove observations that have incorrect date format
+        obs.dropna(axis=0, how='all', subset=['time'], inplace=True)
+        
+            
     obs['tair'] = _f_to_c(obs.tair)
     obs['tdew'] = calc_dew(obs.rh, obs.tair)
     obs.set_index('time', inplace=True)
