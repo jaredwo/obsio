@@ -10,7 +10,6 @@ import pandas as pd
 import sys
 import urllib
 import urllib2
-import warnings
 
 _URL_RAWS_DLY_TIME_SERIES = "http://www.raws.dri.edu/cgi-bin/wea_dysimts.pl?"
 _URL_RAWS_DLY_TIME_SERIES2 = 'http://www.raws.dri.edu/cgi-bin/wea_dysimts2.pl'
@@ -157,7 +156,7 @@ def _build_raws_stn_metadata(nprocs):
     
     return stn_meta
 
-def _parse_raws_hrly_tdew(stn_id, start_date, end_date, pwd):
+def _parse_raws_hrly_tdew(stn_id, start_date, end_date, pwd, min_hrly_for_dly):
     
     values = {'smon': start_date.strftime("%m"),
               'sday': start_date.strftime("%d"),
@@ -208,24 +207,22 @@ def _parse_raws_hrly_tdew(stn_id, start_date, end_date, pwd):
         # remove observations that have incorrect date format
         obs.dropna(axis=0, how='all', subset=['time'], inplace=True)
         
-            
     obs['tair'] = _f_to_c(obs.tair)
     obs['tdew'] = calc_dew(obs.rh, obs.tair)
     obs.set_index('time', inplace=True)
     
-    # Resample to daily average. The how method is used to set any days with
-    # missing hourly observations to na. Ignore warnings on days with no valid
-    # values.
-    with warnings.catch_warnings():
-        
-        warnings.simplefilter("ignore", category=RuntimeWarning)
-        tdew_dly = obs.tdew.resample('D', how=lambda x: x.values.mean())
+    cnts = obs.tdew.resample('D', how='count')
+    tdew_dly = obs.tdew.resample('D', how='mean')
     
+    #Drop days that don't have the minimum number of hourly obs
+    tdew_dly.drop(tdew_dly.index[cnts < min_hrly_for_dly['tdew']], axis=0,
+                  inplace=True)
+
     return tdew_dly
     
 def _parse_raws_webform(args):
         
-    stn_id, elems, hrly_pwd, start_date, end_date = args
+    stn_id, elems, hrly_pwd, min_hrly_for_dly, start_date, end_date = args
     
     values = {'smon': start_date.strftime("%m"),
               'sday': start_date.strftime("%d"),
@@ -300,7 +297,8 @@ def _parse_raws_webform(args):
         
         try:
             
-            tdew = _parse_raws_hrly_tdew(stn_id, start_date, end_date, hrly_pwd)
+            tdew = _parse_raws_hrly_tdew(stn_id, start_date, end_date, hrly_pwd,
+                                         min_hrly_for_dly)
             obs = obs.join(tdew, how='outer', lsuffix='_old')
             obs.drop('tdew_old', axis=1, inplace=True)
         
@@ -326,12 +324,17 @@ class WrccRawsObsIO(ObsIO):
 
     _avail_elems = ['tmin', 'tmax', 'tdew', 'prcp', 'srad', 'wspd']
     _requires_local = False
+    
+    _MIN_HRLY_FOR_DLY_DFLT = {'tdew':4}
 
-    def __init__(self, nprocs=1, hrly_pwd=None, **kwargs):
+    def __init__(self, nprocs=1, hrly_pwd=None, min_hrly_for_dly=None, **kwargs):
 
         super(WrccRawsObsIO, self).__init__(**kwargs)
         self.nprocs = nprocs
         self.hrly_pwd = hrly_pwd
+
+        self.min_hrly_for_dly = (min_hrly_for_dly if min_hrly_for_dly
+                                 else self._MIN_HRLY_FOR_DLY_DFLT)
 
     def _read_stns(self):
         
@@ -385,8 +388,8 @@ class WrccRawsObsIO(ObsIO):
                 
             return start_date, end_date
         
-        iter_stns = [(stn_id, self.elems, self.hrly_pwd) + get_start_end(stn_id)
-                     for stn_id in stns_obs.station_id]
+        iter_stns = [(stn_id, self.elems, self.hrly_pwd, self.min_hrly_for_dly) + 
+                     get_start_end(stn_id) for stn_id in stns_obs.station_id]
                 
         if nprocs > 1:
             

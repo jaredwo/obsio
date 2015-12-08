@@ -367,7 +367,8 @@ class ObsIoFactory(object):
                             start_date=self.start_date,
                             end_date=self.end_date)
 
-    def create_obsio_dly_wrcc_raws(self, nprocs=1, hrly_pwd=None):
+    def create_obsio_dly_wrcc_raws(self, nprocs=1, hrly_pwd=None,
+                                   min_hrly_for_dly=None):
         """Create ObsIO to access daily observations from WRCC RAWS.
 
         The Western Regional Climate Center (WRCC; http://www.wrcc.dri.edu)
@@ -395,13 +396,18 @@ class ObsIoFactory(object):
             relative humidity. To convert to daily average dewpoint, the ObsIO
             uses daily average temperature and relative humidity by default.
             However, if hrly_pwd is passed, the ObsIO will access the hourly
-            webform to get a more accurate estimate of daily average dewpoint.   
+            webform to get a more accurate estimate of daily average dewpoint.
+        min_hrly_for_dly : dict, optional
+            The number of hourly observations required to calculate a daily
+            value for tdew, e.g: {'tdew':4}. If not specified, the default values are:
+            - 'tdew' : 4
         
         Returns
         ----------
         obsio.ObsIO
         """
 
-        return WrccRawsObsIO(nprocs=nprocs, hrly_pwd=hrly_pwd, elems=self.elems,
+        return WrccRawsObsIO(nprocs=nprocs, hrly_pwd=hrly_pwd,
+                             min_hrly_for_dly=min_hrly_for_dly, elems=self.elems,
                              bbox=self.bbox, start_date=self.start_date,
                              end_date=self.end_date)
