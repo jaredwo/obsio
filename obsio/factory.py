@@ -379,6 +379,14 @@ class ObsIoFactory(object):
         - 'tmin' : daily minimum temperature (C)
         - 'tmax' : daily maximum temperature (C)
         - 'tdew' : daily average dewpoint (C)
+        - 'tdewmin' : daily minimum dewpoint (C)
+        - 'tdewmax' : daily maximum dewpoint (C)
+        - 'vpd' : daily average vapor pressure deficit (Pa)
+        - 'vpdmin' : daily minimum vapor pressure deficit (Pa)
+        - 'vpdmax' : daily maximum vapor pressure deficit (Pa)
+        - 'rh' : daily average relative humidity (Pa)
+        - 'rhmin' : daily minimum relative humidity (Pa)
+        - 'rhmax' : daily minimum relative humidity (Pa)
         - 'prcp' : daily total precipitation (mm)
         - 'srad' : daily 24-hr average incoming solar radiation (w m-2)
         - 'wspd' : daily average windspeed (m s-1)
@@ -390,17 +398,24 @@ class ObsIoFactory(object):
             observations from the WRCC RAWS webform. Default: 1
         hrly_pwd : str, optional
             Password for accessing hourly RAWS observations to get a more 
-            accurate estimate of daily average dewpoint. Daily RAWS 
-            observations from WRCC are free, but historical RAWS hourly 
-            observations are "restricted". Daily humidity is only provided as
-            relative humidity. To convert to daily average dewpoint, the ObsIO
-            uses daily average temperature and relative humidity by default.
-            However, if hrly_pwd is passed, the ObsIO will access the hourly
-            webform to get a more accurate estimate of daily average dewpoint.
+            accurate estimate of following humidity variables: tdew, tdewmin,
+            tdewmax, vpd, vpdmin, vpdmax. Daily RAWS observations from WRCC are
+            free, but historical RAWS hourly observations are "restricted".
+            WRCC only provides relative humidity at a daily aggregation.
+            To convert to daily values of tdew and vpd, several assumptions
+            must be made and an accurate reading might not always be possible.
+            If hrly_pwd is passed, the ObsIO will access the hourly WRCC webform
+            to get a more accurate estimate of daily tdew and vpd elements.
         min_hrly_for_dly : dict, optional
-            The number of hourly observations required to calculate a daily
-            value for tdew, e.g: {'tdew':4}. If not specified, the default values are:
+            If hrly_pwd specified, the number of hourly observations required to
+            calculate a daily value, e.g: {'tdew':4}. If not specified,
+            the default values are:
             - 'tdew' : 4
+            - 'tdewmin' : 18
+            - 'tdewmax' : 18
+            - 'vpd' : 18
+            - 'vpdmin' : 18
+            - 'vpdmax' : 18
         
         Returns
         ----------

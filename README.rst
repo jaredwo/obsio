@@ -59,23 +59,38 @@ that supply data through FTP-type access where data must first be downloaded
 and stored locally, and then parsed. Only daily elements are supported at this
 time, but hourly and sub-hourly can easily be added.
 
-============= ============================================ =================== 
-Provider Name Currently Supported Elements                 Req. Local Storage?
-============= ============================================ ===================
-ACIS_	      tmin,tmax,prcp,tobs_tmin,tobs_tmax,tobs_prcp No
-GHCN-D_       tmin,tmax,prcp,tobs_tmin,tobs_tmax,tobs_prcp Yes
-ISDLite_      tmin,tmax,tdew                               Yes
-MADIS_        tmin,tmax,prcp,tdew,srad,wspd                Yes
-NRCS_         tmin,tmax,prcp,snwd,swe                      No
-USHCN_	      \*\_mth_raw,\*\_mth_tob,\*\_mth_fls          Yes
-WRCC_		  tmin,tmax,prcp,srad,wspd                     No
-============= ============================================ ===================
++---------------+-----------------------------------------+--------------------+
+| Provider Name | Currently Supported Elements            | Req. Local Storage |
++===============+=========================================+====================+
+| ACIS_	        | tmin,tmax,prcp,tobs_tmin,tobs_tmax,	  |	No                 |
+|               | tobs_prcp                               |                    |
++---------------+-----------------------------------------+--------------------+
+| GHCN-D_       | tmin,tmax,prcp,tobs_tmin,tobs_tmax,     | Yes                |
+|               | tobs_prcp                               |                    |
++---------------+-----------------------------------------+--------------------+
+| ISDLite_      | tmin,tmax,tdew                          | Yes                |
++---------------+-----------------------------------------+--------------------+
+| MADIS_        | tmin,tmax,prcp,tdew,srad,wspd           | Yes                |
++---------------+-----------------------------------------+--------------------+
+| NRCS_         | tmin,tmax,prcp,snwd,swe                 | No                 |
++---------------+-----------------------------------------+--------------------+
+| USHCN_	    | \*\_mth_raw,\*\_mth_tob,\*\_mth_fls     | Yes                |
++---------------+-----------------------------------------+--------------------+
+| WRCC_		    | tmin,tmax,tdew,tdewmin,tdewmax,vpd,     | No                 |
+|               | vpdmin,vpdmax,rh,rhmin,rhmax,prcp,srad, |                    |
+|               | wspd                                    |                    |
++---------------+-----------------------------------------+--------------------+
 
 Element definitions:
 
 * tmin : daily minimum temperature (C)
 * tmax : daily maximum temperature (C)
 * tdew : daily average dewpoint (C)
+* tdewmin : daily minimum dewpoint (C)
+* tdewmax : daily maximum dewpoint (C)
+* vpd : daily average vapor pressure deficit (Pa)
+* vpdmin : daily minimum vapor pressure deficit (Pa)
+* vpdmax : daily maximum vapor pressure deficit (Pa)
 * prcp : daily total precipitation (mm)
 * srad : daily 24-hr average incoming solar radiation (w m-2)
 * wspd : daily average windspeed (m s-1)

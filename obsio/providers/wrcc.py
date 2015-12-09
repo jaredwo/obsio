@@ -3,7 +3,8 @@ from StringIO import StringIO
 from calendar import monthrange
 from datetime import datetime
 from multiprocessing import Pool
-from obsio.util.humidity import calc_dew
+from obsio.util.humidity import convert_rh_to_tdew, calc_pressure, \
+    convert_rh_to_vpd, convert_rh_to_vpd_daily
 import numpy as np
 import os
 import pandas as pd
@@ -15,6 +16,9 @@ _URL_RAWS_DLY_TIME_SERIES = "http://www.raws.dri.edu/cgi-bin/wea_dysimts.pl?"
 _URL_RAWS_DLY_TIME_SERIES2 = 'http://www.raws.dri.edu/cgi-bin/wea_dysimts2.pl'
 _URL_RAWS_HRLY_TIME_SERIES = "http://www.raws.dri.edu/cgi-bin/wea_list2.pl"
 _URL_RAWS_STN_METADATA = "http://www.raws.dri.edu/cgi-bin/wea_info.pl?"
+
+_HRLY_ELEMS = np.array(['tdew', 'tdewmin', 'tdewmax',
+                        'vpd', 'vpdmin', 'vpdmax'])
 
 _f_to_c = lambda f: (f - 32.0) / 1.8
 
@@ -156,7 +160,8 @@ def _build_raws_stn_metadata(nprocs):
     
     return stn_meta
 
-def _parse_raws_hrly_tdew(stn_id, start_date, end_date, pwd, min_hrly_for_dly):
+def _parse_raws_hrly_webform(stn_id, stn_pres, start_date, end_date, pwd,
+                             min_hrly_for_dly):
     
     values = {'smon': start_date.strftime("%m"),
               'sday': start_date.strftime("%d"),
@@ -206,23 +211,46 @@ def _parse_raws_hrly_tdew(stn_id, start_date, end_date, pwd, min_hrly_for_dly):
         # one or more dates had an incorrect format
         # remove observations that have incorrect date format
         obs.dropna(axis=0, how='all', subset=['time'], inplace=True)
-        
-    obs['tair'] = _f_to_c(obs.tair)
-    obs['tdew'] = calc_dew(obs.rh, obs.tair)
+    
     obs.set_index('time', inplace=True)
     
-    cnts = obs.tdew.resample('D', how='count')
-    tdew_dly = obs.tdew.resample('D', how='mean')
+    obs['tair'] = _f_to_c(obs.tair)
     
-    #Drop days that don't have the minimum number of hourly obs
-    tdew_dly.drop(tdew_dly.index[cnts < min_hrly_for_dly['tdew']], axis=0,
-                  inplace=True)
-
-    return tdew_dly
+    obs['tdew'] = convert_rh_to_tdew(obs.rh, obs.tair)
+    obs['vpd'] = convert_rh_to_vpd(obs.rh, obs.tair, stn_pres)
+            
+    obs_dly = obs[['tdew', 'vpd']].resample('D',
+                                            how=['mean', 'min', 'max', 'count'])
+    
+    # http://stackoverflow.com/questions/14507794/
+    # python-pandas-how-to-flatten-a-hierarchical-index-in-columns
+    obs_dly.columns = ['_'.join(col) for col in obs_dly.columns.values]
+    
+    obs_dly.rename(columns={'tdew_mean':'tdew', 'tdew_min':'tdewmin',
+                            'tdew_max':'tdewmax', 'vpd_mean':'vpd',
+                            'vpd_min':'vpdmin', 'vpd_max':'vpdmax'},
+                   inplace=True)
+    
+    #Set days that don't have minimum number of hourly obs to missing
+    obs_dly.loc[(obs_dly.tdew_count < min_hrly_for_dly['tdew']).values,
+                'tdew'] = np.nan
+    obs_dly.loc[(obs_dly.tdew_count < min_hrly_for_dly['tdewmin']).values,
+                'tdewmin'] = np.nan
+    obs_dly.loc[(obs_dly.tdew_count < min_hrly_for_dly['tdewmax']).values,
+                'tdewmax'] = np.nan  
+    obs_dly.loc[(obs_dly.vpd_count < min_hrly_for_dly['vpd']).values,
+                'vpd'] = np.nan
+    obs_dly.loc[(obs_dly.vpd_count < min_hrly_for_dly['vpdmin']).values,
+                'vpdmin'] = np.nan
+    obs_dly.loc[(obs_dly.vpd_count < min_hrly_for_dly['vpdmax']).values,
+                'vpdmax'] = np.nan
+                    
+    return obs_dly
     
 def _parse_raws_webform(args):
         
-    stn_id, elems, hrly_pwd, min_hrly_for_dly, start_date, end_date = args
+    stn, elems, hrly_pwd, min_hrly_for_dly, start_date, end_date = args
+    stn_id = stn.station_id
     
     values = {'smon': start_date.strftime("%m"),
               'sday': start_date.strftime("%d"),
@@ -278,38 +306,53 @@ def _parse_raws_webform(args):
             tmax = float(vals[9])
             tmin = float(vals[10])
             rh_avg = float(vals[11])
+            rh_max = float(vals[12])
+            rh_min = float(vals[13])
             prcp = float(vals[14])
 
-            obs_ls.append((a_date, srad, wspd, tavg, tmax, tmin, rh_avg, prcp))
+            obs_ls.append((a_date, srad, wspd, tavg, tmax, tmin, rh_avg, rh_max,
+                           rh_min, prcp))
 
     obs = pd.DataFrame(obs_ls, columns=['time', 'srad', 'wspd', 'tavg', 'tmax',
-                                        'tmin', 'rh_avg', 'prcp'])
+                                        'tmin', 'rh','rhmax','rhmin', 'prcp'])
     obs.set_index('time', inplace=True)
     obs.replace(-9999, np.nan, inplace=True)
     
     # convert kWhr to average watts for the day
     obs['srad'] = (obs.srad * 3.6e+6) / 86400
-    # calculate tdew from rh_avg and tavg
-    obs['tdew'] = calc_dew(obs.rh_avg, obs.tavg)
     
-    # Recalculate tdew from hourly observations if hrly_pwd available
-    if 'tdew' in elems and hrly_pwd:
+    # Calculate humidity variables
+    stn_pres = calc_pressure(stn.elevation)
+    # Tdew
+    obs['tdew'] = convert_rh_to_tdew(obs.rh, obs.tavg)
+    obs['tdewmin'] = convert_rh_to_tdew(obs.rhmax, obs.tmin)
+    obs['tdewmax'] = convert_rh_to_tdew(obs.rhmin, obs.tmax)
+    # VPD
+    obs['vpd'] = convert_rh_to_vpd_daily(obs.tmin, obs.tmax, stn_pres,
+                                         obs.rhmin, obs.rhmax)
+    obs['vpdmax'] = convert_rh_to_vpd(obs.rhmin, obs.tmax, stn_pres)
+    obs['vpdmin'] = convert_rh_to_vpd(obs.rhmax, obs.tmin, stn_pres)
+    
+    # Recalculate some humidity variables from hourly observations
+    # if hrly_pwd available
+    elems = np.array(elems)
+    elems_hrly = elems[np.in1d(elems, _HRLY_ELEMS)]
+    
+    if elems_hrly.size > 0 and hrly_pwd:
         
         try:
             
-            tdew = _parse_raws_hrly_tdew(stn_id, start_date, end_date, hrly_pwd,
-                                         min_hrly_for_dly)
-            obs = obs.join(tdew, how='outer', lsuffix='_old')
-            obs.drop('tdew_old', axis=1, inplace=True)
+            obsh = _parse_raws_hrly_webform(stn_id, stn_pres, start_date, end_date,
+                                            hrly_pwd, min_hrly_for_dly)
+            obs = obs.join(obsh, how='outer', lsuffix='_dly')
+            #obs.drop(list(np.char.add(elems_hrly, '_old')), axis=1, inplace=True)
         
         except ValueError:
-            # No valid hourly observations
             
-            if not obs.tdew.empty:
-                
-                print ("Warning: Could not access hourly humidity observations "
-                       "for station %s. Reverting to daily RHavg + Tavg for "
-                       "Tdew calculation ") % stn_id
+            # No valid hourly observations                
+            print ("Warning: Could not access hourly humidity observations "
+                   "for station %s. Reverting back estimates from daily temperature "
+                   "and humidity variables.") % stn_id
     
     obs = obs[elems].copy()
     
@@ -322,10 +365,13 @@ def _parse_raws_webform(args):
 
 class WrccRawsObsIO(ObsIO):
 
-    _avail_elems = ['tmin', 'tmax', 'tdew', 'prcp', 'srad', 'wspd']
+    _avail_elems = ['tmin', 'tmax', 'tdew', 'tdewmin', 'tdewmax', 'vpd',
+                    'vpdmin','vpdmax', 'rh', 'rhmin', 'rhmax', 'prcp', 'srad',
+                    'wspd']
     _requires_local = False
+    _MIN_HRLY_FOR_DLY_DFLT = {'tdew':4, 'tdewmin':18, 'tdewmax':18, 'vpd':18,
+                              'vpdmin':18, 'vpdmax':18}
     
-    _MIN_HRLY_FOR_DLY_DFLT = {'tdew':4}
 
     def __init__(self, nprocs=1, hrly_pwd=None, min_hrly_for_dly=None, **kwargs):
 
@@ -388,8 +434,8 @@ class WrccRawsObsIO(ObsIO):
                 
             return start_date, end_date
         
-        iter_stns = [(stn_id, self.elems, self.hrly_pwd, self.min_hrly_for_dly) + 
-                     get_start_end(stn_id) for stn_id in stns_obs.station_id]
+        iter_stns = [(row[1], self.elems, self.hrly_pwd, self.min_hrly_for_dly) + 
+                     get_start_end(row[0]) for row in stns_obs.iterrows()]
                 
         if nprocs > 1:
             
