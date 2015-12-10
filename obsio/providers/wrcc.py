@@ -381,6 +381,19 @@ class WrccRawsObsIO(ObsIO):
 
         self.min_hrly_for_dly = (min_hrly_for_dly if min_hrly_for_dly
                                  else self._MIN_HRLY_FOR_DLY_DFLT)
+        
+        # check to make sure there is an entry in min_hrly_for_dly for each
+        # hourly elem
+        for a_elem in self._MIN_HRLY_FOR_DLY_DFLT.keys():
+
+            try:
+
+                self.min_hrly_for_dly[a_elem]
+
+            except KeyError:
+
+                self.min_hrly_for_dly[
+                    a_elem] = self._MIN_HRLY_FOR_DLY_DFLT[a_elem]
 
     def _read_stns(self):
         
