@@ -63,23 +63,35 @@ def calc_svp(temp, pressure):
     except TypeError:
         temp = np.array([temp])
         n = 1
+    try:
+        len(pressure)
+    except TypeError:
+        pressure_a = np.empty_like(temp)
+        pressure_a.fill(pressure)
+        pressure = pressure_a
         
     # convert pandas series to ndarray
     try:
         temp = temp.values
     except AttributeError:
         pass
+    try:
+        pressure = pressure.values
+    except AttributeError:
+        pass
     
-
+    if pressure.size != temp.size:
+        raise Exception("Pressure and temp arrays not the same size.")
+    
     pressure = pressure / 100.0
     warm = temp > 0
     cold = temp <= 0
     f = np.empty(n)
 
-    f[warm] = 1 + Aw + pressure * \
-        (Bw + Cw * (temp[warm] + Dw + Ew * pressure) ** 2)
-    f[cold] = 1 + Ai + pressure * \
-        (Bi + Ci * (temp[cold] + Di + Ei * pressure) ** 2)
+    f[warm] = 1 + Aw + pressure[warm] * \
+        (Bw + Cw * (temp[warm] + Dw + Ew * pressure[warm]) ** 2)
+    f[cold] = 1 + Ai + pressure[cold] * \
+        (Bi + Ci * (temp[cold] + Di + Ei * pressure[cold]) ** 2)
 
     svp = 6.1121 * \
         np.exp(1) ** (((18.678 - (temp / 234.5)) * temp) / (257.14 + temp)) * 100
@@ -171,6 +183,30 @@ def convert_rh_to_vpd(rh, temp, pressure):
     
     svp = calc_svp(temp, pressure)
     vp = svp * (rh / 100.0)
+    vpd = svp - vp
+    
+    return vpd
+
+def convert_tdew_to_vpd(tdew, temp, pressure):
+    '''Convert dew point to vapor pressure deficit
+    
+    Parameters
+    ----------
+    tdew : float
+        dew point temperature (C)
+    temp : float
+        air temperature (C)
+    pressure : float
+        atmospheric pressure (Pa)
+        
+    Returns
+    -------
+    vpd : float
+        vapor pressure deficit (Pa) 
+    '''
+    
+    vp = calc_svp(tdew, pressure)
+    svp = calc_svp(temp, pressure)
     vpd = svp - vp
     
     return vpd
@@ -292,3 +328,29 @@ def convert_rh_to_vpd_daily(tmin, tmax, pressure, rhmin=None, rhmax=None,
         
         
     return svp_avg - vp_avg
+
+
+def convert_tdew_to_rh(tdew, temp, pressure):
+    '''Convert dewpoint temperature to relative humidity.
+    
+    Parameters
+    ----------
+    tdew : float
+        dewpoint temperature (C)
+    temp : float
+        air temperature (C)
+    pressure : float
+        atmospheric pressure (Pa)
+    
+    Returns
+    -------
+    rh : float
+        relative humidity (%)
+    '''    
+
+    svp_tdew = calc_svp(tdew, pressure)
+    svp_temp = calc_svp(temp, pressure)
+    
+    rh = (svp_tdew / svp_temp) * 100
+    
+    return rh
