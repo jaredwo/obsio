@@ -229,10 +229,18 @@ class ObsIoFactory(object):
         - 'tmin' : daily minimum temperature (C)
         - 'tmax' : daily maximum temperature (C)
         - 'tdew' : daily average dewpoint (C)
+        - 'tdewmin' : daily minimum dewpoint (C)
+        - 'tdewmax' : daily maximum dewpoint (C)
+        - 'vpd' : daily average vapor pressure deficit (Pa)
+        - 'vpdmin' : daily minimum vapor pressure deficit (Pa)
+        - 'vpdmax' : daily maximum vapor pressure deficit (Pa)
+        - 'rh' : daily average relative humidity (Pa)
+        - 'rhmin' : daily minimum relative humidity (Pa)
+        - 'rhmax' : daily minimum relative humidity (Pa)
         - 'prcp' : daily total precipitation (mm)
         - 'srad' : daily 24-hr average incoming solar radiation (w m-2)
         - 'wspd' : daily average windspeed (m s-1)
-
+        
         Parameters
         ----------
         local_data_path : str, optional

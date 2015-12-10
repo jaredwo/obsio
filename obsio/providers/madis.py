@@ -1,5 +1,6 @@
 from .. import LOCAL_DATA_PATH
-from ..util.humidity import calc_dew
+from ..util.humidity import convert_rh_to_tdew, calc_pressure, \
+    convert_tdew_to_vpd, convert_rh_to_vpd, convert_tdew_to_rh
 from ..util.misc import TimeZones, uniquify
 from .generic import ObsIO
 from StringIO import StringIO
@@ -381,7 +382,6 @@ class _Tmax(_DailyElem):
 
         return df_out
 
-
 class _Tdew(_DailyElem):
 
     _vnames = ['dewpoint', 'dewpointDD', 'relHumidity', 'relHumidityDD',
@@ -427,14 +427,14 @@ class _Tdew(_DailyElem):
         if ('relHumidity' in df.columns and
                 'dewpoint_rh_C' not in df.columns):
 
-            df['dewpoint_rh_C'] = calc_dew(df['relHumidity'],
-                                           df['temperature_C'])
+            df['dewpoint_rh_C'] = convert_rh_to_tdew(df['relHumidity'],
+                                                     df['temperature_C'])
 
     def transform_to_daily(self, obs_tz, a_date, obs_grped_hrs_stnid):
 
-        # For each stationId and hour, get mean dewpoint_C, mean dewpoint_rh_C
+        # For each stationId and hour, get agg dewpoint_C, mean dewpoint_rh_C
         obs_hrly = (obs_grped_hrs_stnid[['dewpoint_C', 'dewpoint_rh_C']].
-                    agg(np.mean))
+                    agg(self._agg_method))
 
         # Group  by stationId
         obs_hrly_grped_stns = obs_hrly.groupby(level=0)
@@ -443,14 +443,14 @@ class _Tdew(_DailyElem):
         nobs = obs_hrly_grped_stns[['dewpoint_C', 'dewpoint_rh_C']].count()
 
         # Create masks of stationIds that have minimum number of
-        # of hourly obs to calculate reliable average dewpoint_C, dewpoint_rh_C
+        # of hourly obs to calculate reliable agg dewpoint_C, dewpoint_rh_C
         mask_nhrs_tdew = nobs['dewpoint_C'] >= self.min_hrly_for_dly
         mask_nhrs_tdewrh = nobs['dewpoint_rh_C'] >= self.min_hrly_for_dly
 
-        # Get the mean of all of hourly dewpoint_C, dewpoint_rh_C observations
-        # These are the daily average values
+        # Get the agg of all of hourly dewpoint_C, dewpoint_rh_C observations
+        # These are the daily agg values
         obs_avg_tdew = obs_hrly_grped_stns[['dewpoint_C',
-                                            'dewpoint_rh_C']].mean()
+                                            'dewpoint_rh_C']].agg(self._agg_method)
 
         # Remove stations that did not meet minimum number of hourly
         # observation requirements
@@ -463,10 +463,295 @@ class _Tdew(_DailyElem):
         tdew_fnl = pd.concat([tdew, tdewrh])
 
         df_out = pd.DataFrame({'obs_value': tdew_fnl,
-                               'elem': 'tdew',
+                               'elem': self._elem_name,
                                'time': a_date}).reset_index()
 
         return df_out
+
+class _TdewAvg(_Tdew):
+
+    _elem_name = 'tdew'
+    
+    @property
+    def _agg_method(self):
+        return np.mean
+
+class _TdewMin(_Tdew):
+
+    _elem_name = 'tdewmin'
+    
+    @property
+    def _agg_method(self):
+        return np.min
+    
+class _TdewMax(_Tdew):
+
+    _elem_name = 'tdewmax'
+    
+    @property
+    def _agg_method(self):
+        return np.max
+
+class _Vpd(_DailyElem):
+
+    _vnames = ['dewpoint', 'dewpointDD', 'relHumidity', 'relHumidityDD',
+               'temperature', 'temperatureDD', 'stationPressure',
+               'stationPressureDD']
+
+    def mask_qa(self, df, rm_inplace=False):
+
+        mask_rm_tdew = self._get_mask_rm(df, 'dewpoint', 'dewpointDD')
+        mask_rm_rh = self._get_mask_rm(df, 'relHumidity', 'relHumidityDD')
+        mask_rm_t = self._get_mask_rm(df, 'temperature', 'temperatureDD')
+        mask_rm_p = self._get_mask_rm(df, 'stationPressure', 'stationPressureDD')
+        
+        self._set_nan(df, mask_rm_tdew, 'dewpoint')
+        self._set_nan(df, mask_rm_rh, 'relHumidity')
+        self._set_nan(df, mask_rm_t, 'temperature')
+        self._set_nan(df, mask_rm_p, 'stationPressure')
+
+        mask_rm = np.logical_and(np.logical_and(mask_rm_tdew, mask_rm_rh),
+                                 mask_rm_t)
+
+        if rm_inplace:
+
+            idx_rm = df.index[mask_rm]
+
+            if idx_rm.size > 0:
+
+                df.drop(idx_rm, axis=0, inplace=True)
+
+        else:
+
+            return mask_rm
+
+    def convert_units(self, df):
+
+        if ('dewpoint' in df.columns and 'dewpoint_C' not in df.columns):
+            df['dewpoint_C'] = _k_to_c(df['dewpoint'])
+
+        if ('temperature' in df.columns and 'temperature_C' not in df.columns):
+            df['temperature_C'] = _k_to_c(df['temperature'])
+            
+        if ('pressure_infilled' not in df.columns):
+            
+            if 'stationPressure' in df.columns:
+                
+                df['pressure_infilled'] = df['stationPressure']
+                
+                if df['pressure_infilled'].isnull().any():
+                    
+                    elev_pressure = calc_pressure(df['elevation'])
+                    df['pressure_infilled'].fillna(elev_pressure, inplace=True)
+                    
+            else:
+                
+                df['pressure_infilled'] = calc_pressure(df['elevation'])
+                
+        if ('dewpoint_C' in df.columns and 'temperature_C' in df.columns and
+            'vpd_dewpoint' not in df.columns):
+            
+            df['vpd_dewpoint'] = convert_tdew_to_vpd(df['dewpoint_C'],
+                                                     df['temperature_C'],
+                                                     df['pressure_infilled'])
+            
+        if ('relHumidity' in df.columns and 'temperature_C' in df.columns and
+            'vpd_rh' not in df.columns):
+            
+            df['vpd_rh'] = convert_rh_to_vpd(df['relHumidity'],
+                                             df['temperature_C'],
+                                             df['pressure_infilled'])
+    
+    def transform_to_daily(self, obs_tz, a_date, obs_grped_hrs_stnid):
+        
+        # For each stationId and hour, get agg vpd_dewpoint, mean vpd_rh
+        obs_hrly = (obs_grped_hrs_stnid[['vpd_dewpoint',
+                                         'vpd_rh']].agg(self._agg_method))
+
+        # Group by stationId
+        obs_hrly_grped_stns = obs_hrly.groupby(level=0)
+
+        # Count the number of hourly obs for vpd_dewpoint, vpd_rh
+        nobs = obs_hrly_grped_stns[['vpd_dewpoint', 'vpd_rh']].count()
+
+        # Create masks of stationIds that have minimum number of
+        # of hourly obs to calculate reliable agg vpd_dewpoint, vpd_rh
+        mask_nhrs_vpddew = nobs['vpd_dewpoint'] >= self.min_hrly_for_dly
+        mask_nhrs_vpdrh = nobs['vpd_rh'] >= self.min_hrly_for_dly
+
+        # Get the agg of all hourly vpd_dewpoint, vpd_rh observations
+        # These are final agg values
+        obs_avg_vpd = obs_hrly_grped_stns[['vpd_dewpoint',
+                                           'vpd_rh']].agg(self._agg_method)
+
+        # Remove stations that did not meet minimum number of hourly
+        # observation requirements
+        vpddew = obs_avg_vpd['vpd_dewpoint'][mask_nhrs_vpddew]
+        vpdrh = obs_avg_vpd['vpd_rh'][mask_nhrs_vpdrh]
+
+        # Remove vpdrh obs that are already in vpddew
+        # This puts priority on vpd based off tdew if
+        # both vpdrh and vpddew exist
+        vpddew = vpddew[~vpddew.index.isin(vpdrh.index)]
+
+        vpd_fnl = pd.concat([vpddew, vpdrh])
+
+        df_out = pd.DataFrame({'obs_value': vpd_fnl,
+                               'elem': self._elem_name,
+                               'time': a_date}).reset_index()
+
+        return df_out
+    
+class _VpdAvg(_Vpd):
+    
+    _elem_name = 'vpd'
+    
+    @property
+    def _agg_method(self):
+        return np.mean
+    
+class _VpdMin(_Vpd):
+    
+    _elem_name = 'vpdmin'
+    
+    @property
+    def _agg_method(self):
+        return np.min
+    
+class _VpdMax(_Vpd):
+    
+    _elem_name = 'vpdmax'
+    
+    @property
+    def _agg_method(self):
+        return np.max
+
+class _Rh(_DailyElem):
+
+    _vnames = ['dewpoint', 'dewpointDD', 'relHumidity', 'relHumidityDD',
+               'temperature', 'temperatureDD', 'stationPressure',
+               'stationPressureDD']
+
+    def mask_qa(self, df, rm_inplace=False):
+
+        mask_rm_tdew = self._get_mask_rm(df, 'dewpoint', 'dewpointDD')
+        mask_rm_rh = self._get_mask_rm(df, 'relHumidity', 'relHumidityDD')
+        mask_rm_t = self._get_mask_rm(df, 'temperature', 'temperatureDD')
+        mask_rm_p = self._get_mask_rm(df, 'stationPressure', 'stationPressureDD')
+        
+        self._set_nan(df, mask_rm_tdew, 'dewpoint')
+        self._set_nan(df, mask_rm_rh, 'relHumidity')
+        self._set_nan(df, mask_rm_t, 'temperature')
+        self._set_nan(df, mask_rm_p, 'stationPressure')
+
+        mask_rm = np.logical_and(np.logical_and(mask_rm_tdew, mask_rm_rh),
+                                 mask_rm_t)
+
+        if rm_inplace:
+
+            idx_rm = df.index[mask_rm]
+
+            if idx_rm.size > 0:
+
+                df.drop(idx_rm, axis=0, inplace=True)
+
+        else:
+
+            return mask_rm
+
+    def convert_units(self, df):
+
+        if ('dewpoint' in df.columns and 'dewpoint_C' not in df.columns):
+            df['dewpoint_C'] = _k_to_c(df['dewpoint'])
+
+        if ('temperature' in df.columns and 'temperature_C' not in df.columns):
+            df['temperature_C'] = _k_to_c(df['temperature'])
+            
+        if ('pressure_infilled' not in df.columns):
+            
+            if 'stationPressure' in df.columns:
+                
+                df['pressure_infilled'] = df['stationPressure']
+                
+                if df['pressure_infilled'].isnull().any():
+                    
+                    elev_pressure = calc_pressure(df['elevation'])
+                    df['pressure_infilled'].fillna(elev_pressure, inplace=True)
+                    
+            else:
+                
+                df['pressure_infilled'] = calc_pressure(df['elevation'])
+                
+        if ('dewpoint_C' in df.columns and 'temperature_C' in df.columns and
+            'relHumidity_dewpoint' not in df.columns):
+            
+            df['relHumidity_dewpoint'] = convert_tdew_to_rh(df['dewpoint_C'],
+                                                            df['temperature_C'],
+                                                            df['pressure_infilled'])
+    
+    def transform_to_daily(self, obs_tz, a_date, obs_grped_hrs_stnid):
+        
+        # For each stationId and hour, get agg relHumidity,relHumidity_dewpoint
+        obs_hrly = (obs_grped_hrs_stnid[['relHumidity',
+                                         'relHumidity_dewpoint']].agg(self._agg_method))
+
+        # Group by stationId
+        obs_hrly_grped_stns = obs_hrly.groupby(level=0)
+
+        # Count the number of hourly obs for relHumidity, relHumidity_dewpoint
+        nobs = obs_hrly_grped_stns[['relHumidity', 'relHumidity_dewpoint']].count()
+
+        # Create masks of stationIds that have minimum number of
+        # of hourly obs to calculate reliable agg relHumidity, relHumidity_dewpoint
+        mask_nhrs_rh = nobs['relHumidity'] >= self.min_hrly_for_dly
+        mask_nhrs_rhtdew = nobs['relHumidity_dewpoint'] >= self.min_hrly_for_dly
+
+        # Get the agg of all hourly relHumidity, relHumidity_dewpoint observations
+        # These are the final agg values
+        obs_avg_vpd = obs_hrly_grped_stns[['relHumidity',
+                                           'relHumidity_dewpoint']].agg(self._agg_method)
+
+        # Remove stations that did not meet minimum number of hourly
+        # observation requirements
+        rh = obs_avg_vpd['relHumidity'][mask_nhrs_rh]
+        rhtdew = obs_avg_vpd['relHumidity_dewpoint'][mask_nhrs_rhtdew]
+
+        # Remove rhtdew obs that are already in rh
+        # This puts priority on direct rh obsevations if
+        # both rh and rhtdew exist
+        rhtdew = rhtdew[~rhtdew.index.isin(rh.index)]
+
+        vpd_fnl = pd.concat([rh, rhtdew])
+
+        df_out = pd.DataFrame({'obs_value': vpd_fnl,
+                               'elem': self._elem_name,
+                               'time': a_date}).reset_index()
+
+        return df_out
+
+class _RhAvg(_Rh):
+    
+    _elem_name = 'rh'
+    
+    @property
+    def _agg_method(self):
+        return np.mean
+    
+class _RhMin(_Rh):
+    
+    _elem_name = 'rhmin'
+    
+    @property
+    def _agg_method(self):
+        return np.min
+    
+class _RhMax(_Rh):
+    
+    _elem_name = 'rhmax'
+    
+    @property
+    def _agg_method(self):
+        return np.max
 
 
 class _Wspd(_DailyElem):
@@ -735,7 +1020,15 @@ class _MultiElem(_DailyElem):
 
     _ELEM_TO_DAILYELEM = {'tmin': _Tmin,
                           'tmax': _Tmax,
-                          'tdew': _Tdew,
+                          'tdew': _TdewAvg,
+                          'tdewmin' : _TdewMin,
+                          'tdewmax' : _TdewMax,
+                          'vpd' : _VpdAvg,
+                          'vpdmin' : _VpdMin,
+                          'vpdmax' : _VpdMax,
+                          'rh' : _RhAvg,
+                          'rhmin' : _RhMin,
+                          'rhmax' : _RhMax,
                           'prcp': _Prcp,
                           'srad': _Srad,
                           'wspd': _Wspd}
@@ -1109,10 +1402,14 @@ def _round_coords(df_stns, decimals=10):
 
 class MadisObsIO(ObsIO):
 
-    _avail_elems = ['tmin', 'tmax', 'tdew', 'srad', 'prcp', 'wspd']
+    _avail_elems = ['tmin', 'tmax', 'tdew', 'tdewmin', 'tdewmax', 'vpd',
+                    'vpdmin', 'vpdmax', 'rh', 'rhmin', 'rhmax', 'srad', 'prcp',
+                    'wspd']
     _requires_local = True
 
-    _MIN_HRLY_FOR_DLY_DFLT = {'tmin': 20, 'tmax': 20, 'tdew': 4, 'srad': 24,
+    _MIN_HRLY_FOR_DLY_DFLT = {'tmin': 20, 'tmax': 20, 'tdew': 4, 'tdewmin': 18,
+                              'tdewmax': 18, 'vpd':18, 'vpdmin':18, 'vpdmax':18,
+                              'rh':18, 'rhmin':18, 'rhmax':18, 'srad': 24,
                               'prcp': 24, 'wspd': 24}
 
     def __init__(self, local_data_path=None, data_version=None, username=None,
@@ -1324,7 +1621,7 @@ class MadisObsIO(ObsIO):
 
     def _read_stns(self):
 
-        mask_dup = self._df_obs.duplicated(_UNIQ_STN_COLUMNS, take_last=True)
+        mask_dup = self._df_obs.duplicated(_UNIQ_STN_COLUMNS, keep='last')
 
         stn_cols = _UNIQ_STN_COLUMNS + ['station_name',
                                         'provider', 'sub_provider']
@@ -1333,7 +1630,7 @@ class MadisObsIO(ObsIO):
 
         stns['station_id_orig'] = stns['station_id']
 
-        mask_dup_id = stns.duplicated(['station_id'], take_last=True)
+        mask_dup_id = stns.duplicated(['station_id'], keep='last')
 
         if mask_dup_id.any():
 

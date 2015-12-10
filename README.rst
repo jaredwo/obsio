@@ -70,7 +70,9 @@ time, but hourly and sub-hourly can easily be added.
 +---------------+-----------------------------------------+--------------------+
 | ISDLite_      | tmin,tmax,tdew                          | Yes                |
 +---------------+-----------------------------------------+--------------------+
-| MADIS_        | tmin,tmax,prcp,tdew,srad,wspd           | Yes                |
+| MADIS_        | tmin,tmax,prcp,tdew,tdewmin,tdewmax,    | Yes                |
+|               | vpd,vpdmin,vpdmax,rh,rhmin,rhmax,srad,  |                    |
+|               | wspd                                    |                    |
 +---------------+-----------------------------------------+--------------------+
 | NRCS_         | tmin,tmax,prcp,snwd,swe                 | No                 |
 +---------------+-----------------------------------------+--------------------+
