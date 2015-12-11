@@ -3,6 +3,10 @@ import logging
 import numpy as np
 import urllib
 import urllib2
+import pycurl
+from StringIO import StringIO
+from gzip import GzipFile
+from time import sleep
 
 # tzwhere currently sets log level to debug when imported
 # get log level before import and then reset log level to this
@@ -224,3 +228,64 @@ def get_elevation(lon, lat, usrname_geonames=None):
         elev = get_elev_geonames(lon, lat)
 
     return elev
+
+def open_remote_gz(url, maxtries=3):
+    
+    ntries = 0
+    
+    while 1:
+    
+        try:
+            
+            buf = StringIO()
+            c = pycurl.Curl()
+            c.setopt(pycurl.URL, url)
+            c.setopt(pycurl.WRITEDATA, buf)
+            c.setopt(pycurl.FAILONERROR, True)
+            c.perform()
+            c.close()
+            buf.seek(0)
+            break
+            
+        except pycurl.error:
+            
+            ntries += 1
+        
+            if ntries == maxtries:
+        
+                raise
+
+            sleep(1)
+    
+    return GzipFile(fileobj=buf, mode='rb')
+
+def open_remote_file(url, maxtries=3):
+    
+    ntries = 0
+    
+    while 1:
+    
+        try:
+    
+            buf = StringIO()
+            c = pycurl.Curl()
+            c.setopt(pycurl.URL, url)
+            c.setopt(pycurl.WRITEDATA, buf)
+            c.setopt(pycurl.FAILONERROR, True)
+            c.perform()
+            c.close()
+            buf.seek(0)
+            break
+            
+        except pycurl.error:
+            
+            ntries += 1
+        
+            if ntries == maxtries:
+        
+                raise
+        
+            sleep(1)
+    
+    return buf
+    

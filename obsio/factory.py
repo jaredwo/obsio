@@ -293,6 +293,15 @@ class ObsIoFactory(object):
             - 'srad' : 24
             - 'prcp' : 24
             - 'wspd' : 24
+            - 'tdewmin' : 18
+            - 'tdewmax' : 18
+            - 'vpd' : 18
+            - 'vpdmin' : 18
+            - 'vpdmax' : 18
+            - 'rh' : 18
+            - 'rhmin' : 18
+            - 'rhmax' : 18
+            - 'prcp' : 24
         nprocs : int, optional
             The number of processes to use. Increasing the processor count 
             can decrease the time required to decompress and load the MADIS
@@ -332,8 +341,7 @@ class ObsIoFactory(object):
                           nprocs=nprocs, temp_path=temp_path,
                           handle_dups=handle_dups)
 
-    def create_obsio_dly_isdlite(self, local_data_path=None,
-                                 min_hrly_for_dly=None):
+    def create_obsio_dly_isdlite(self, min_hrly_for_dly=None):
         """Create ObsIO to access daily observations from NCEI's ISD-Lite.
 
         NOAA's National Centers for Environmental Information (NCEI)
@@ -347,15 +355,18 @@ class ObsIoFactory(object):
         - 'tmin' : daily minimum temperature (C)
         - 'tmax' : daily maximum temperature (C)
         - 'tdew' : daily average dewpoint (C)
+        - 'tdewmin' : daily minimum dewpoint (C)
+        - 'tdewmax' : daily maximum dewpoint (C)
+        - 'vpd' : daily average vapor pressure deficit (Pa)
+        - 'vpdmin' : daily minimum vapor pressure deficit (Pa)
+        - 'vpdmax' : daily maximum vapor pressure deficit (Pa)
+        - 'rh' : daily average relative humidity (Pa)
+        - 'rhmin' : daily minimum relative humidity (Pa)
+        - 'rhmax' : daily minimum relative humidity (Pa)
+        - 'prcp' : daily total precipitation (mm)
 
         Parameters
         ----------
-        local_data_path : str, optional
-            The local path for downloading and storing ISD-Lite data files
-            from the ISD-Lite FTP. If not specified, will use and create an
-            ISD-Lite directory in the path specified by the OBSIO_DATA 
-            environmental variable. If OBSIO_DATA is not set, a default 
-            temporary path will be used.
         min_hrly_for_dly : dict, optional
             The number of hourly observations required to calculate a daily
             value for each element, e.g: {'tmin':20,'tmax':20,'tdew':4}. If
@@ -363,14 +374,22 @@ class ObsIoFactory(object):
             - 'tmin' : 20
             - 'tmax' : 20
             - 'tdew' : 4
+            - 'tdewmin' : 18
+            - 'tdewmax' : 18
+            - 'vpd' : 18
+            - 'vpdmin' : 18
+            - 'vpdmax' : 18
+            - 'rh' : 18
+            - 'rhmin' : 18
+            - 'rhmax' : 18
+            - 'prcp' : 24
 
         Returns
         ----------
         obsio.ObsIO
         """
 
-        return IsdLiteObsIO(local_data_path=local_data_path,
-                            min_hrly_for_dly=min_hrly_for_dly,
+        return IsdLiteObsIO(min_hrly_for_dly=min_hrly_for_dly,
                             elems=self.elems, bbox=self.bbox,
                             start_date=self.start_date,
                             end_date=self.end_date)

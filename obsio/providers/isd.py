@@ -1,43 +1,184 @@
-from .. import LOCAL_DATA_PATH
-from ..util.misc import TimeZones
+from ..util.humidity import calc_pressure, convert_tdew_to_vpd, \
+    convert_tdew_to_rh
+from ..util.misc import TimeZones, open_remote_file, open_remote_gz
 from .generic import ObsIO
 from pytz.exceptions import NonExistentTimeError, AmbiguousTimeError
 from urlparse import urljoin
-import errno
-import ftplib
 import numpy as np
-import os
 import pandas as pd
-import re
-import subprocess
 
+_RPATH_ISD = 'ftp://ftp.ncdc.noaa.gov/pub/data/noaa/'
+_RPATH_ISD_LITE = 'ftp://ftp.ncdc.noaa.gov/pub/data/noaa/isd-lite/'
+_ISD_FWF_COLSPECS = [(0, 4), (5, 7), (8, 10), (11, 13), (13, 19), (19, 25),
+                     (49, 55)]
+_ISD_FWF_COLNAMES = ['year', 'month', 'day', 'hour', 'tair', 'tdew', 'prcp']
+
+def _get_begin_end_utc(a_date, tz_name):
+
+    # Get begin/end local time bounds for the local calendar day
+    # On daylight savings time transition days, the time period is
+    # still limited to 24 hours and may include an hour in the next calendar
+    # day or one less hour in the current calendar day.
+    try:
+        begin_time = a_date.tz_localize(tz_name)
+    except NonExistentTimeError:
+        # Time does not exist because of clocks are set forward
+        # for daylight savings time at midnight for this time zone.
+        # This only happens in the America/Havana time zone. Add one hour
+        # to the begin_time
+        begin_time = (
+            a_date + pd.Timedelta(hours=1)).tz_localize(tz_name)
+    except AmbiguousTimeError:
+        # Time is ambiguous because clocks are set backward for daylight
+        # savings time at midnight for this time zone. This only happens in
+        # the America/Havana time zone. Set ambiguous=True so that dst=True
+        # and the time is considered to be the first occurrence.
+        begin_time = a_date.tz_localize(tz_name, ambiguous=True)
+
+    end_time = begin_time + pd.Timedelta(days=1)
+
+    begin_time = begin_time.tz_convert('UTC')
+    end_time = end_time.tz_convert('UTC')
+    
+    return begin_time, end_time
+
+def _parse_obs(stn_id, elev, tz_name, start_date, end_date, elems,
+               min_hrly_for_dly):
+    
+    start_hr_utc = _get_begin_end_utc(start_date, tz_name)[0]
+    end_hr_utc = _get_begin_end_utc(end_date, tz_name)[1]
+    
+    uyrs = np.unique(pd.date_range(start_hr_utc.date(), end_hr_utc.date(),
+                                   freq='D').year)
+    
+    obs_hrly = []
+
+    for yr in uyrs:
+        
+        url = urljoin(_RPATH_ISD_LITE, '%d/%s-%d.gz' % (yr, stn_id, yr))
+        
+        try:
+            f_stnyr = open_remote_gz(url)
+        except Exception:
+            print "Warning: Could not find remote file, will skip: %s" % url
+            continue
+        
+        df_obs = pd.read_fwf(f_stnyr, _ISD_FWF_COLSPECS, header=None,
+                             names=_ISD_FWF_COLNAMES, na_values=['-9999'])
+        
+        # https://github.com/pydata/pandas/issues/8158
+        # http://stackoverflow.com/questions/19350806/
+        # how-to-convert-columns-into-one-datetime-column-in-pandas
+        y = np.array(df_obs.year - 1970, dtype='<M8[Y]')
+        m = np.array(df_obs.month - 1, dtype='<m8[M]')
+        d = np.array(df_obs.day - 1, dtype='<m8[D]')
+        
+        a_time = (pd.to_datetime(y + m + d).values + 
+                  pd.to_timedelta(df_obs.hour, 'h').values)
+        
+        df_obs.set_index(pd.to_datetime(a_time, utc=True), inplace=True)
+        
+        df_obs['tair'] = df_obs['tair'] / 10.0
+        df_obs['tdew'] = df_obs['tdew'] / 10.0
+        
+        # Trace prcp is represented with -1. Set to na for now
+        df_obs.loc[df_obs.prcp == -1, 'prcp'] = np.nan
+        df_obs['prcp'] = df_obs['prcp'] / 10.0
+
+        obs_hrly.append(df_obs)
+
+    if len(obs_hrly) > 0:
+
+        obs_hrly = pd.concat(obs_hrly)
+        
+        mask_time = ((obs_hrly.index >= start_hr_utc) & 
+                     (obs_hrly.index <= end_hr_utc))
+        
+        obs_hrly.drop(obs_hrly.index[~mask_time], axis=0, inplace=True)
+        obs_hrly.index = obs_hrly.index.tz_convert(tz_name)
+        
+        stn_pres = calc_pressure(elev)
+        obs_hrly['rh'] = convert_tdew_to_rh(obs_hrly.tdew, obs_hrly.tair,
+                                            stn_pres)
+        obs_hrly['vpd'] = convert_tdew_to_vpd(obs_hrly.tdew, obs_hrly.tair,
+                                              stn_pres)
+        
+        obs_dly = obs_hrly[['tair', 'tdew', 'rh',
+                            'vpd', 'prcp']].resample('D', how=['mean', 'min',
+                                                               'max', 'count',
+                                                               'sum'])
+        # http://stackoverflow.com/questions/14507794/
+        # python-pandas-how-to-flatten-a-hierarchical-index-in-columns
+        obs_dly.columns = ['_'.join(col) for col in obs_dly.columns.values]
+        
+        obs_dly.rename(columns={'tair_min':'tmin', 'tair_max':'tmax',
+                                'tdew_mean':'tdew', 'tdew_min':'tdewmin',
+                                'tdew_max':'tdewmax', 'vpd_mean':'vpd',
+                                'vpd_min':'vpdmin', 'vpd_max':'vpdmax',
+                                'rh_mean':'rh', 'rh_min':'rhmin',
+                                'rh_max':'rhmax', 'prcp_sum':'prcp'},
+                       inplace=True)
+        
+        # Set days that don't have minimum number of hourly obs to missing
+        obs_dly.loc[(obs_dly.tair_count < min_hrly_for_dly['tmin']).values,
+                    'tmin'] = np.nan
+        obs_dly.loc[(obs_dly.tair_count < min_hrly_for_dly['tmax']).values,
+                    'tmax'] = np.nan
+        obs_dly.loc[(obs_dly.prcp_count < min_hrly_for_dly['prcp']).values,
+                    'prcp'] = np.nan
+        obs_dly.loc[(obs_dly.tdew_count < min_hrly_for_dly['tdew']).values,
+                    'tdew'] = np.nan
+        obs_dly.loc[(obs_dly.tdew_count < min_hrly_for_dly['tdewmin']).values,
+                    'tdewmin'] = np.nan
+        obs_dly.loc[(obs_dly.tdew_count < min_hrly_for_dly['tdewmax']).values,
+                    'tdewmax'] = np.nan  
+        obs_dly.loc[(obs_dly.vpd_count < min_hrly_for_dly['vpd']).values,
+                    'vpd'] = np.nan
+        obs_dly.loc[(obs_dly.vpd_count < min_hrly_for_dly['vpdmin']).values,
+                    'vpdmin'] = np.nan
+        obs_dly.loc[(obs_dly.vpd_count < min_hrly_for_dly['vpdmax']).values,
+                    'vpdmax'] = np.nan
+        obs_dly.loc[(obs_dly.rh_count < min_hrly_for_dly['rh']).values,
+                    'rh'] = np.nan
+        obs_dly.loc[(obs_dly.rh_count < min_hrly_for_dly['rhmin']).values,
+                    'rhmin'] = np.nan
+        obs_dly.loc[(obs_dly.rh_count < min_hrly_for_dly['rhmax']).values,
+                    'rhmax'] = np.nan
+                
+        obs_dly.drop(obs_dly.columns[~obs_dly.columns.isin(elems)], axis=1,
+                     inplace=True)
+        obs_dly.index = obs_dly.index.tz_localize(None)
+        obs_dly = obs_dly.stack().reset_index()
+        obs_dly.rename(columns={'level_0':'time', 'level_1':'elem', 0:'obs_value'},
+                       inplace=True)
+        obs_dly['station_id'] = stn_id
+        
+        return obs_dly
+    
+    else:
+        
+        return None
 
 class IsdLiteObsIO(ObsIO):
 
-    _avail_elems = ['tmin', 'tmax', 'tdew']
+    _avail_elems = ['tmin', 'tmax', 'tdew', 'tdewmin', 'tdewmax', 'vpd',
+                    'vpdmin', 'vpdmax', 'rh', 'rhmin', 'rhmax','prcp']
 
-    _RPATH_ISD = 'ftp://ftp.ncdc.noaa.gov/pub/data/noaa/'
-    _RPATH_ISD_LITE = 'ftp://ftp.ncdc.noaa.gov/pub/data/noaa/isd-lite/'
-    _ISD_FWF_COLSPECS = [
-        (0, 4), (5, 7), (8, 10), (11, 13), (13, 19), (19, 25), (49, 55)]
+    _ISD_FWF_COLSPECS = [(0, 4), (5, 7), (8, 10), (11, 13), (13, 19), (19, 25),
+                         (49, 55)]
     _ISD_FWF_COLNAMES = ['year', 'month', 'day', 'hour', 'temperature',
                          'dewpoint', 'precipitation']
 
-    min_hrly_for_dly_DFLT = {'tmin': 20, 'tmax': 20, 'tdew': 4}
+    _MIN_HRLY_FOR_DLY_DFLT = {'tmin': 20, 'tmax': 20, 'tdew': 4, 'tdewmin': 18,
+                              'tdewmax': 18, 'vpd':18, 'vpdmin':18, 'vpdmax':18,
+                              'rh':18, 'rhmin':18, 'rhmax':18, 'prcp': 24}
 
-    def __init__(self, local_data_path=None, min_hrly_for_dly=None, **kwargs):
+    def __init__(self, min_hrly_for_dly=None, **kwargs):
 
         super(IsdLiteObsIO, self).__init__(**kwargs)
-
-        self.local_data_path = (local_data_path if local_data_path
-                                else LOCAL_DATA_PATH)
-        self.path_isd_data = os.path.join(self.local_data_path, 'ISD-Lite')
-        
-        if not os.path.isdir(self.path_isd_data):
-            os.mkdir(self.path_isd_data)
-        
+                
         self.min_hrly_for_dly = (min_hrly_for_dly if min_hrly_for_dly
-                                 else self.min_hrly_for_dly_DFLT)
+                                 else self._MIN_HRLY_FOR_DLY_DFLT)
         # check to make sure there is an entry in min_hrly_for_dly for each
         # elem
         for a_elem in self.elems:
@@ -49,80 +190,9 @@ class IsdLiteObsIO(ObsIO):
             except KeyError:
 
                 self.min_hrly_for_dly[
-                    a_elem] = self.min_hrly_for_dly_DFLT[a_elem]
-
-        if self.has_start_end_dates:
-
-            self._years = np.arange(self.start_date.year,
-                                    self.end_date.year + 1)
-
-        else:
-
-            fnames = np.array(os.listdir(self.path_isd_data))
-
-            if fnames.size > 0:
-
-                mask = np.array([re.match('^-?[0-9]+$', a_name) is None
-                                 for a_name in fnames])
-                fnames = fnames[~mask]
-
-                if fnames.size > 0:
-
-                    self._years = np.sort(fnames.astype(np.int))
-
-                else:
-
-                    self._years = np.array([])
-
-            else:
-
-                self._years = np.array([])
-
-        self._fpath_stns_cache = os.path.join(self.path_isd_data,
-                                              'stns_cache.pkl')
-
-        try:
-
-            self._stns_cache = pd.read_pickle(self._fpath_stns_cache)
-
-        except IOError:
-
-            self._stns_cache = pd.DataFrame(columns=['latitude', 'longitude',
-                                                     'elevation', 'start_date',
-                                                     'end_date', 'station_id',
-                                                     'station_name', 'provider',
-                                                     'sub_provider',
-                                                     'time_zone'])
+                    a_elem] = self._MIN_HRLY_FOR_DLY_DFLT[a_elem]
 
         self._a_tz = None
-
-    def _merge_with_stn_cache(self, stns_new):
-
-        stns_cache = self._stns_cache
-
-        if stns_cache.size != 0:
-
-            stns_merge = stns_new.merge(stns_cache[['station_id', 'time_zone']],
-                                        on='station_id', how='left', sort=False)
-        else:
-
-            stns_merge = stns_new
-
-        if not 'time_zone' in stns_merge.columns:
-            stns_merge['time_zone'] = np.nan
-
-        if stns_merge.shape[0] != stns_new.shape[0]:
-            raise ValueError("Non-unique station id.")
-
-        mask_no_tz = stns_merge['time_zone'].isnull()
-
-        if mask_no_tz.any():
-
-            self._tz.set_tz(stns_merge)
-
-        stns_merge = stns_merge.set_index('station_id', drop=False)
-
-        return stns_merge
 
     @property
     def _tz(self):
@@ -134,9 +204,10 @@ class IsdLiteObsIO(ObsIO):
         return self._a_tz
 
     def _read_stns(self):
+        
+        fstns = open_remote_file(urljoin(_RPATH_ISD, 'isd-history.csv'))
 
-        stns = pd.read_csv(os.path.join(self.path_isd_data, 'isd-history.csv'),
-                           dtype={'USAF': np.str, 'WBAN': np.str})
+        stns = pd.read_csv(fstns, dtype={'USAF': np.str, 'WBAN': np.str})
         stns['BEGIN'] = pd.to_datetime(stns.BEGIN, format="%Y%m%d")
         stns['END'] = pd.to_datetime(stns.END, format="%Y%m%d")
         stns['station_id'] = stns.USAF + "-" + stns.WBAN
@@ -152,12 +223,14 @@ class IsdLiteObsIO(ObsIO):
 
         stns = stns.drop(['USAF', 'WBAN', 'STATION NAME', 'CTRY', 'STATE',
                           'ICAO'], axis=1)
+        
+        stns = stns.set_index('station_id', drop=False)
 
         if self.bbox is not None:
 
-            mask_bnds = ((stns.latitude >= self.bbox.south) &
-                         (stns.latitude <= self.bbox.north) &
-                         (stns.longitude >= self.bbox.west) &
+            mask_bnds = ((stns.latitude >= self.bbox.south) & 
+                         (stns.latitude <= self.bbox.north) & 
+                         (stns.longitude >= self.bbox.west) & 
                          (stns.longitude <= self.bbox.east))
 
             stns = stns[mask_bnds].copy()
@@ -174,217 +247,18 @@ class IsdLiteObsIO(ObsIO):
                 if start_date > end_date:
                     start_date = end_date
 
-                print ("IsdLiteObsIO: Warning: Max end date %s of stations is"
-                       " < than the specified end date of %s. Respecifying "
-                       "end date to %s since isd-history.csv is not always "
-                       "up-to-date." % (max_enddate.strftime('%Y-%m-%d'),
-                                        self.start_date.strftime('%Y-%m-%d'),
-                                        end_date.strftime('%Y-%m-%d')))
 
-            mask_por = (((start_date <= stns.start_date) &
-                         (stns.start_date <= end_date)) |
-                        ((stns.start_date <= start_date) &
+            mask_por = (((start_date <= stns.start_date) & 
+                         (stns.start_date <= end_date)) | 
+                        ((stns.start_date <= start_date) & 
                          (start_date <= stns.end_date)))
 
             stns = stns[mask_por].copy()
 
-        stns = stns.reset_index(drop=True)
-
-        stns = self._merge_with_stn_cache(stns)
-        self._update_stn_cache(stns)
+        
+        self._tz.set_tz(stns)
 
         return stns
-
-    def _update_stn_cache(self, stns):
-
-        mask_exist = stns.index.isin(self._stns_cache.index)
-
-        self._stns_cache = pd.concat([self._stns_cache,
-                                      stns.drop(stns.index[mask_exist])])
-
-        pd.to_pickle(self._stns_cache, self._fpath_stns_cache)
-
-    def download_local(self):
-
-        def mkdir_p(path):
-            try:
-                os.makedirs(path)
-            except OSError as exc:  # Python >2.5
-                if exc.errno == errno.EEXIST and os.path.isdir(path):
-                    pass
-                else:
-                    raise
-
-        def get_years():
-
-            aftp = ftplib.FTP('ftp.ncdc.noaa.gov')
-            aftp.login()
-
-            aftp.cwd('/pub/data/noaa/isd-lite')
-            fnames = np.array(aftp.nlst())
-            mask = np.array([re.match('^-?[0-9]+$', a_name) is None
-                             for a_name in fnames])
-            years_ftp = np.sort(fnames[~mask].astype(np.int))
-
-            if self.has_start_end_dates:
-
-                years = np.arange(self.start_date.year, self.end_date.year + 1)
-                years = years[np.in1d(years, years_ftp, False)]
-
-            else:
-
-                years = years_ftp
-
-            aftp.close()
-
-            return years
-
-        local_path = self.path_isd_data
-
-        subprocess.call(['wget', '-N', '--directory-prefix=' + local_path,
-                         urljoin(self._RPATH_ISD, 'isd-history.csv')])
-
-        years = get_years().astype(np.str)
-
-        for yr in years:
-
-            path_yr = os.path.join(local_path, yr)
-            mkdir_p(path_yr)
-
-            subprocess.call(['wget', '-m', '-nd',
-                             '--directory-prefix=' + path_yr,
-                             urljoin(self._RPATH_ISD_LITE, yr)])
-
-        if not self.has_start_end_dates:
-            # update year list
-            fnames = np.array(os.listdir(self.path_isd_data))
-            mask = np.array([re.match('^-?[0-9]+$', a_name) is None
-                             for a_name in fnames])
-            self._years = np.sort(fnames[~mask].astype(np.int))
-
-    def _parse_hrly_stn_obs(self, stn_id, local_tz):
-
-        obs_all = []
-
-        for yr in self._years.astype(np.str):
-
-            try:
-
-                fpath = os.path.join(self.path_isd_data, yr,
-                                     '%s-%s.gz' % (stn_id, yr))
-
-                df_obs = pd.read_fwf(fpath, self._ISD_FWF_COLSPECS, header=None,
-                                     names=self._ISD_FWF_COLNAMES,
-                                     na_values=['-9999'])
-
-                a_time = list((df_obs.year.apply(lambda x: '%d' % x) +
-                               df_obs.month.apply(lambda x: '%.2d' % x) +
-                               df_obs.day.apply(lambda x: '%.2d' % x) +
-                               df_obs.hour.apply(lambda x: '%.2d' % x)))
-
-                df_obs.index = pd.to_datetime(a_time, format='%Y%m%d%H',
-                                              utc=True)
-                df_obs['temperature'] = df_obs['temperature'] / 10.0
-                df_obs['dewpoint'] = df_obs['dewpoint'] / 10.0
-                df_obs['precipitation'] = df_obs['precipitation'] / 10.0
-
-                obs_all.append(df_obs)
-
-            except IOError:
-                # No observations in year for station
-                continue
-
-        if len(obs_all) > 0:
-
-            obs_all = pd.concat(obs_all)
-
-            dt_i = (obs_all.index.tz_convert(local_tz))
-            obs_all['time_local'] = dt_i
-            obs_all['hour_local'] = dt_i.hour
-            obs_all['day_local'] = dt_i.day
-            obs_all['month_local'] = dt_i.month
-            obs_all['year_local'] = dt_i.year
-            obs_all.index = obs_all.time_local
-
-            if self.has_start_end_dates:
-
-                begin = self._localize(self.start_date, local_tz)
-                end = self._localize(self.end_date, local_tz)
-
-                mask_time = ((obs_all.time_local >= begin) &
-                             (obs_all.time_local <= end))
-                obs_all = obs_all[mask_time].copy()
-
-        return obs_all
-
-    def _localize(self, a_date, tz_local):
-
-        # Get begin/end local time bounds for the local calendar day
-        # On daylight savings time transition days, the time period is
-        # still limited to 24 hours and may include an hour in the next calendar
-        # day or one less hour in the current calendar day.
-        try:
-            a_time = a_date.tz_localize(tz_local)
-        except NonExistentTimeError:
-            # Time does not exist because of clocks are set forward
-            # for daylight savings time at midnight for this time zone.
-            # This only happens in the America/Havana time zone. Add one hour
-            # to the begin_time
-            a_time = (a_date + pd.Timedelta(hours=1)).tz_localize(tz_local)
-        except AmbiguousTimeError:
-            # Time is ambiguous because clocks are set backward for daylight
-            # savings time at midnight for this time zone. This only happens in
-            # the America/Havana time zone. Set ambiguous=True so that dst=True
-            # and the time is considered to be the first occurrence.
-            a_time = a_date.tz_localize(tz_local, ambiguous=True)
-
-        return a_time
-
-    def _to_daily(self, obs_hrly):
-
-        cnts = obs_hrly[['temperature', 'dewpoint']].resample('D', how='count')
-
-        obs_dly = []
-
-        if 'tdew' in self.elems:
-
-            tdew_avg = obs_hrly['dewpoint'].resample('D', how='mean')
-            tdew_avg = tdew_avg[cnts['dewpoint'] >=
-                                self.min_hrly_for_dly['tdew']]
-
-            df_tdew_avg = pd.DataFrame({'obs_value': tdew_avg,
-                                        'elem': 'tdew',
-                                        'time': tdew_avg.index.
-                                        tz_localize(None)}).reset_index(drop=True)
-            obs_dly.append(df_tdew_avg)
-
-        if 'tmin' in self.elems:
-
-            tmin = obs_hrly['temperature'].resample('D', how='min')
-            tmin = tmin[cnts['temperature'] >= self.min_hrly_for_dly['tmin']]
-
-            df_tmin = pd.DataFrame({'obs_value': tmin,
-                                    'elem': 'tmin',
-                                    'time': tmin.index.
-                                    tz_localize(None)}).reset_index(drop=True)
-
-            obs_dly.append(df_tmin)
-
-        if 'tmax' in self.elems:
-
-            tmax = obs_hrly['temperature'].resample('D', how='max')
-            tmax = tmax[cnts['temperature'] >= self.min_hrly_for_dly['tmax']]
-
-            df_tmax = pd.DataFrame({'obs_value': tmax,
-                                    'elem': 'tmax',
-                                    'time': tmax.index.
-                                    tz_localize(None)}).reset_index(drop=True)
-
-            obs_dly.append(df_tmax)
-
-        obs_dly = pd.concat(obs_dly, ignore_index=True)
-
-        return obs_dly
 
     def read_obs(self, stns_ids=None):
 
@@ -403,16 +277,20 @@ class IsdLiteObsIO(ObsIO):
             
             obs_all = []
 
-            for a_id, a_tz in zip(stns_obs.station_id, stns_obs.time_zone):
-
-                obs_hrly_stn = self._parse_hrly_stn_obs(a_id, a_tz)
-
-                if len(obs_hrly_stn) > 0:
-
-                    obs_dly = self._to_daily(obs_hrly_stn)
-                    obs_dly['station_id'] = a_id
-
-                    obs_all.append(obs_dly)
+            for stn_id, a_stn in stns_obs.iterrows():
+                
+                if self.has_start_end_dates:
+                    start_date = self.start_date
+                    end_date = self.end_date
+                else:
+                    start_date = a_stn.start_date
+                    end_date = a_stn.end_date
+                    
+                obs_stn = _parse_obs(stn_id, a_stn.elevation, a_stn.time_zone,
+                                     start_date, end_date, self.elems,
+                                     self.min_hrly_for_dly)
+                        
+                obs_all.append(obs_stn)
 
             obs_all = pd.concat(obs_all, ignore_index=True)
 

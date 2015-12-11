@@ -68,7 +68,8 @@ time, but hourly and sub-hourly can easily be added.
 | GHCN-D_       | tmin,tmax,prcp,tobs_tmin,tobs_tmax,     | Yes                |
 |               | tobs_prcp                               |                    |
 +---------------+-----------------------------------------+--------------------+
-| ISDLite_      | tmin,tmax,tdew                          | Yes                |
+| ISDLite_      | tmin,tmax,tdew,tdewmin,tdewmax,vpd,     | Yes                |
+|               | vpdmin,vpdmax,rh,rhmin,rhmax,prcp       |                    |
 +---------------+-----------------------------------------+--------------------+
 | MADIS_        | tmin,tmax,prcp,tdew,tdewmin,tdewmax,    | Yes                |
 |               | vpd,vpdmin,vpdmax,rh,rhmin,rhmax,srad,  |                    |
