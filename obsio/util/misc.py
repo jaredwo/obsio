@@ -230,9 +230,9 @@ def get_elevation(lon, lat, usrname_geonames=None):
     return elev
 
 def open_remote_gz(url, maxtries=3):
-    
+
     ntries = 0
-    
+        
     while 1:
     
         try:
@@ -251,7 +251,7 @@ def open_remote_gz(url, maxtries=3):
             
             ntries += 1
         
-            if ntries == maxtries:
+            if ntries >= maxtries:
         
                 raise
 
@@ -281,7 +281,7 @@ def open_remote_file(url, maxtries=3):
             
             ntries += 1
         
-            if ntries == maxtries:
+            if ntries >= maxtries:
         
                 raise
         
