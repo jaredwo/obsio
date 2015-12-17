@@ -58,10 +58,23 @@ def _parse_obs(stn_id, elev, tz_name, start_date, end_date, elems,
         url = urljoin(_RPATH_ISD_LITE, '%d/%s-%d.gz' % (yr, stn_id, yr))
         
         try:
-            f_stnyr = open_remote_gz(url)
-        except Exception:
-            print "Warning: Could not find remote file, will skip: %s" % url
-            continue
+        
+            f_stnyr = open_remote_gz(url,maxtries=0)
+        
+        except Exception as e:
+            
+            # File not found error
+            # http://curl.haxx.se/libcurl/c/libcurl-errors.html
+            if e.args[0] == 78:
+            
+                print ("Warning: No file available for station id %s for "
+                       "year %d, will skip: %s" % (stn_id ,yr, url))
+                continue
+            
+            else:
+                
+                # Other download errors, try 2 more times
+                f_stnyr = open_remote_gz(url, maxtries=2)
         
         df_obs = pd.read_fwf(f_stnyr, _ISD_FWF_COLSPECS, header=None,
                              names=_ISD_FWF_COLNAMES, na_values=['-9999'])
@@ -81,8 +94,8 @@ def _parse_obs(stn_id, elev, tz_name, start_date, end_date, elems,
         df_obs['tair'] = df_obs['tair'] / 10.0
         df_obs['tdew'] = df_obs['tdew'] / 10.0
         
-        # Trace prcp is represented with -1. Set to na for now
-        df_obs.loc[df_obs.prcp == -1, 'prcp'] = np.nan
+        # Trace prcp is represented with -1. Set to 0 for now
+        df_obs.loc[df_obs.prcp == -1, 'prcp'] = 0
         df_obs['prcp'] = df_obs['prcp'] / 10.0
 
         obs_hrly.append(df_obs)
@@ -118,35 +131,34 @@ def _parse_obs(stn_id, elev, tz_name, start_date, end_date, elems,
                                 'rh_mean':'rh', 'rh_min':'rhmin',
                                 'rh_max':'rhmax', 'prcp_sum':'prcp'},
                        inplace=True)
-        
-        # Set days that don't have minimum number of hourly obs to missing
-        obs_dly.loc[(obs_dly.tair_count < min_hrly_for_dly['tmin']).values,
-                    'tmin'] = np.nan
-        obs_dly.loc[(obs_dly.tair_count < min_hrly_for_dly['tmax']).values,
-                    'tmax'] = np.nan
-        obs_dly.loc[(obs_dly.prcp_count < min_hrly_for_dly['prcp']).values,
-                    'prcp'] = np.nan
-        obs_dly.loc[(obs_dly.tdew_count < min_hrly_for_dly['tdew']).values,
-                    'tdew'] = np.nan
-        obs_dly.loc[(obs_dly.tdew_count < min_hrly_for_dly['tdewmin']).values,
-                    'tdewmin'] = np.nan
-        obs_dly.loc[(obs_dly.tdew_count < min_hrly_for_dly['tdewmax']).values,
-                    'tdewmax'] = np.nan  
-        obs_dly.loc[(obs_dly.vpd_count < min_hrly_for_dly['vpd']).values,
-                    'vpd'] = np.nan
-        obs_dly.loc[(obs_dly.vpd_count < min_hrly_for_dly['vpdmin']).values,
-                    'vpdmin'] = np.nan
-        obs_dly.loc[(obs_dly.vpd_count < min_hrly_for_dly['vpdmax']).values,
-                    'vpdmax'] = np.nan
-        obs_dly.loc[(obs_dly.rh_count < min_hrly_for_dly['rh']).values,
-                    'rh'] = np.nan
-        obs_dly.loc[(obs_dly.rh_count < min_hrly_for_dly['rhmin']).values,
-                    'rhmin'] = np.nan
-        obs_dly.loc[(obs_dly.rh_count < min_hrly_for_dly['rhmax']).values,
-                    'rhmax'] = np.nan
                 
+        # Set days that don't have minimum number of hourly obs to missing
+        # Need to account for daylight savings days that only have 23 hours
+        # Get the number of hours in each day
+        hr_cnt = pd.Series(0,pd.date_range(obs_dly.index[0].date(),
+                                           obs_dly.index[-1].date()+pd.Timedelta(days=1),
+                                           freq='h',closed='left',tz=tz_name),
+                           name='hr_cnt')
+        hr_cnt = hr_cnt.resample('D',how='count')
+        #Subtract hour count from 24 to get offset for minimum number of observation
+        #thresholds
+        hr_cnt = 24 - hr_cnt
+        #Set any negative offsets (i.e.-day with 25 hours) to 0
+        hr_cnt[hr_cnt < 0] = 0
+        obs_dly = obs_dly.join(hr_cnt)
+        
+        for a_elem in elems:
+            
+            cnt_vname = IsdLiteObsIO._elem_to_cnt_vname[a_elem]
+        
+            mask_low_cnt = (obs_dly[cnt_vname] <
+                            (min_hrly_for_dly[a_elem]- obs_dly.hr_cnt)).values
+        
+            obs_dly.loc[mask_low_cnt, a_elem] = np.nan
+        
         obs_dly.drop(obs_dly.columns[~obs_dly.columns.isin(elems)], axis=1,
                      inplace=True)
+        
         obs_dly.index = obs_dly.index.tz_localize(None)
         obs_dly = obs_dly.stack().reset_index()
         obs_dly.rename(columns={'level_0':'time', 'level_1':'elem', 0:'obs_value'},
@@ -163,12 +175,13 @@ class IsdLiteObsIO(ObsIO):
 
     _avail_elems = ['tmin', 'tmax', 'tdew', 'tdewmin', 'tdewmax', 'vpd',
                     'vpdmin', 'vpdmax', 'rh', 'rhmin', 'rhmax','prcp']
-
-    _ISD_FWF_COLSPECS = [(0, 4), (5, 7), (8, 10), (11, 13), (13, 19), (19, 25),
-                         (49, 55)]
-    _ISD_FWF_COLNAMES = ['year', 'month', 'day', 'hour', 'temperature',
-                         'dewpoint', 'precipitation']
-
+    
+    _elem_to_cnt_vname =  {'tmin':'tair_count','tmax':'tair_count','tdew':'tdew_count',
+                           'tdewmin':'tdew_count', 'tdewmax':'tdew_count',
+                           'vpd':'vpd_count','vpdmin':'vpd_count','vpdmax':'vpd_count',
+                           'rh':'rh_count','rhmin':'rh_count','rhmax':'rh_count',
+                           'prcp':'prcp_count'}
+    
     _MIN_HRLY_FOR_DLY_DFLT = {'tmin': 20, 'tmax': 20, 'tdew': 4, 'tdewmin': 18,
                               'tdewmax': 18, 'vpd':18, 'vpdmin':18, 'vpdmax':18,
                               'rh':18, 'rhmin':18, 'rhmax':18, 'prcp': 24}
