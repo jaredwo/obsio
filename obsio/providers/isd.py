@@ -42,18 +42,26 @@ def _get_begin_end_utc(a_date, tz_name):
     
     return begin_time, end_time
 
-def _parse_obs(stn_id, elev, tz_name, start_date, end_date, elems,
-               min_hrly_for_dly):
+def _parse_obs(a_stn, start_date, end_date, elems, min_hrly_for_dly):
     
-    start_hr_utc = _get_begin_end_utc(start_date, tz_name)[0]
-    end_hr_utc = _get_begin_end_utc(end_date, tz_name)[1]
+    stn_id = a_stn.station_id
+    tz_name = a_stn.time_zone
+    elev = a_stn.elevation
+    has_start_end = start_date is not None and end_date is not None
+    yrs = np.arange(a_stn.start_year,a_stn.end_year+1)
     
-    uyrs = np.unique(pd.date_range(start_hr_utc.date(), end_hr_utc.date(),
-                                   freq='D').year)
-    
+    if has_start_end:
+        
+        #subset to years that only intersect with start/end date years requested
+        start_hr_utc = _get_begin_end_utc(start_date, tz_name)[0]
+        end_hr_utc = _get_begin_end_utc(end_date, tz_name)[1]
+        yrs_req = np.unique(pd.date_range(start_hr_utc.date(), end_hr_utc.date(),
+                                          freq='D').year)
+        yrs = np.intersect1d(yrs, yrs_req, True)
+
     obs_hrly = []
 
-    for yr in uyrs:
+    for yr in yrs:
         
         url = urljoin(_RPATH_ISD_LITE, '%d/%s-%d.gz' % (yr, stn_id, yr))
         
@@ -63,12 +71,11 @@ def _parse_obs(stn_id, elev, tz_name, start_date, end_date, elems,
         
         except Exception as e:
             
-            # File not found error
-            # http://curl.haxx.se/libcurl/c/libcurl-errors.html
+
             if e.args[0] == 78:
-            
-                print ("Warning: No file available for station id %s for "
-                       "year %d, will skip: %s" % (stn_id ,yr, url))
+                # File not found error
+                # http://curl.haxx.se/libcurl/c/libcurl-errors.html
+                # Year file does not exist for station. Continue to next year
                 continue
             
             else:
@@ -104,10 +111,13 @@ def _parse_obs(stn_id, elev, tz_name, start_date, end_date, elems,
 
         obs_hrly = pd.concat(obs_hrly)
         
-        mask_time = ((obs_hrly.index >= start_hr_utc) & 
-                     (obs_hrly.index <= end_hr_utc))
+        if has_start_end:
+            
+            mask_time = ((obs_hrly.index >= start_hr_utc) & 
+                         (obs_hrly.index < end_hr_utc))
+            obs_hrly.drop(obs_hrly.index[~mask_time], axis=0, inplace=True)
         
-        obs_hrly.drop(obs_hrly.index[~mask_time], axis=0, inplace=True)
+        
         obs_hrly.index = obs_hrly.index.tz_convert(tz_name)
         
         stn_pres = calc_pressure(elev)
@@ -231,14 +241,30 @@ class IsdLiteObsIO(ObsIO):
         stns.loc[stns.WBAN == '99999', 'sub_provider'] = ''
 
         stns = stns.rename(columns={'LAT': 'latitude', 'LON': 'longitude',
-                                    'ELEV(M)': 'elevation', 'BEGIN': 'start_date',
-                                    'END': 'end_date'})
+                                    'ELEV(M)': 'elevation'})
+        # Get start and end year of station records
+        # Add 1 year buffer on both ends to account for period-of-record
+        # metadata not always being up-to-date
+        stns['start_year'] = stns.BEGIN.dt.year - 1
+        stns['end_year'] = stns.END.dt.year + 1
 
         stns = stns.drop(['USAF', 'WBAN', 'STATION NAME', 'CTRY', 'STATE',
-                          'ICAO'], axis=1)
+                          'ICAO','BEGIN','END'], axis=1)
         
         stns = stns.set_index('station_id', drop=False)
-
+        
+        # Limit years to what is available on the FTP
+        # Get year list
+        afile = open_remote_file(_RPATH_ISD_LITE)
+        yrs_avail = pd.read_fwf(afile, header=None, usecols=[8], names=['year'])
+        yrs_avail = pd.to_numeric(yrs_avail.year,
+                                  errors='coerce').dropna().astype(np.int).values
+        min_yr = np.min(yrs_avail)
+        max_yr = np.max(yrs_avail)
+        
+        stns.loc[stns.start_year < min_yr, 'start_year'] = min_yr
+        stns.loc[stns.end_year > max_yr, 'end_year'] = max_yr
+        
         if self.bbox is not None:
 
             mask_bnds = ((stns.latitude >= self.bbox.south) & 
@@ -249,22 +275,15 @@ class IsdLiteObsIO(ObsIO):
             stns = stns[mask_bnds].copy()
 
         if self.has_start_end_dates:
-
-            max_enddate = stns.end_date.max()
-            start_date = self.start_date
-            end_date = self.end_date
-
-            if end_date > max_enddate:
-                end_date = max_enddate
-
-                if start_date > end_date:
-                    start_date = end_date
-
-
-            mask_por = (((start_date <= stns.start_date) & 
-                         (stns.start_date <= end_date)) | 
-                        ((stns.start_date <= start_date) & 
-                         (start_date <= stns.end_date)))
+            
+            # Get stations that overlap with the year(s) of the start/end dates
+            yr_start = self.start_date.year
+            yr_end = self.end_date.year
+            
+            mask_por = (((yr_start <= stns.start_year) & 
+                         (stns.start_year <= yr_end)) | 
+                        ((stns.start_year <= yr_start) & 
+                         (yr_start <= stns.end_year)))
 
             stns = stns[mask_por].copy()
 
@@ -289,18 +308,17 @@ class IsdLiteObsIO(ObsIO):
                 stns_obs = self.stns.loc[stns_ids]
             
             obs_all = []
+            
+            if self.has_start_end_dates:
+                start_date = self.start_date
+                end_date = self.end_date
+            else:
+                start_date = None
+                end_date = None
 
             for stn_id, a_stn in stns_obs.iterrows():
                 
-                if self.has_start_end_dates:
-                    start_date = self.start_date
-                    end_date = self.end_date
-                else:
-                    start_date = a_stn.start_date
-                    end_date = a_stn.end_date
-                    
-                obs_stn = _parse_obs(stn_id, a_stn.elevation, a_stn.time_zone,
-                                     start_date, end_date, self.elems,
+                obs_stn = _parse_obs(a_stn, start_date, end_date, self.elems,
                                      self.min_hrly_for_dly)
                         
                 obs_all.append(obs_stn)
