@@ -341,7 +341,7 @@ class ObsIoFactory(object):
                           nprocs=nprocs, temp_path=temp_path,
                           handle_dups=handle_dups)
 
-    def create_obsio_dly_isdlite(self, min_hrly_for_dly=None):
+    def create_obsio_dly_isdlite(self, nprocs=1, min_hrly_for_dly=None):
         """Create ObsIO to access daily observations from NCEI's ISD-Lite.
 
         NOAA's National Centers for Environmental Information (NCEI)
@@ -367,6 +367,10 @@ class ObsIoFactory(object):
 
         Parameters
         ----------
+        nprocs : int, optional
+            The number of concurrent processes to use for downloading
+            observations. ftp.ncdc.noaa.gov allows up to 3 concurrent
+            connections. Default: 1
         min_hrly_for_dly : dict, optional
             The number of hourly observations required to calculate a daily
             value for each element, e.g: {'tmin':20,'tmax':20,'tdew':4}. If
@@ -389,7 +393,7 @@ class ObsIoFactory(object):
         obsio.ObsIO
         """
 
-        return IsdLiteObsIO(min_hrly_for_dly=min_hrly_for_dly,
+        return IsdLiteObsIO(nprocs=nprocs, min_hrly_for_dly=min_hrly_for_dly,
                             elems=self.elems, bbox=self.bbox,
                             start_date=self.start_date,
                             end_date=self.end_date)

@@ -1,11 +1,16 @@
 from ..util.humidity import calc_pressure, convert_tdew_to_vpd, \
     convert_tdew_to_rh
-from ..util.misc import TimeZones, open_remote_file, open_remote_gz
+from ..util.misc import TimeZones, open_remote_file
 from .generic import ObsIO
+from StringIO import StringIO
+from ftplib import FTP
+from gzip import GzipFile
+from multiprocessing.pool import Pool
 from pytz.exceptions import NonExistentTimeError, AmbiguousTimeError
 from urlparse import urljoin
 import numpy as np
 import pandas as pd
+import sys
 
 _RPATH_ISD = 'ftp://ftp.ncdc.noaa.gov/pub/data/noaa/'
 _RPATH_ISD_LITE = 'ftp://ftp.ncdc.noaa.gov/pub/data/noaa/isd-lite/'
@@ -42,144 +47,159 @@ def _get_begin_end_utc(a_date, tz_name):
     
     return begin_time, end_time
 
-def _parse_obs(a_stn, start_date, end_date, elems, min_hrly_for_dly):
+def _init_worker(func):
+    '''
+    http://stackoverflow.com/questions/10117073/
+    how-to-use-initializer-to-set-up-my-multiprocess-pool
+    '''
     
+    func.ftp = FTP('ftp.ncdc.noaa.gov')
+    func.ftp.login()
+
+def _download_obs(args):
+
+    a_stn, start_date, end_date, elems, min_hrly_for_dly = args
     stn_id = a_stn.station_id
     tz_name = a_stn.time_zone
     elev = a_stn.elevation
     has_start_end = start_date is not None and end_date is not None
     yrs = np.arange(a_stn.start_year,a_stn.end_year+1)
     
-    if has_start_end:
-        
-        #subset to years that only intersect with start/end date years requested
-        start_hr_utc = _get_begin_end_utc(start_date, tz_name)[0]
-        end_hr_utc = _get_begin_end_utc(end_date, tz_name)[1]
-        yrs_req = np.unique(pd.date_range(start_hr_utc.date(), end_hr_utc.date(),
-                                          freq='D').year)
-        yrs = np.intersect1d(yrs, yrs_req, True)
-
-    obs_hrly = []
-
-    for yr in yrs:
-        
-        url = urljoin(_RPATH_ISD_LITE, '%d/%s-%d.gz' % (yr, stn_id, yr))
-        
-        try:
-        
-            f_stnyr = open_remote_gz(url,maxtries=0)
-        
-        except Exception as e:
-            
-
-            if e.args[0] == 78:
-                # File not found error
-                # http://curl.haxx.se/libcurl/c/libcurl-errors.html
-                # Year file does not exist for station. Continue to next year
-                continue
-            
-            else:
-                
-                # Other download errors, try 2 more times
-                f_stnyr = open_remote_gz(url, maxtries=2)
-        
-        df_obs = pd.read_fwf(f_stnyr, _ISD_FWF_COLSPECS, header=None,
-                             names=_ISD_FWF_COLNAMES, na_values=['-9999'])
-        
-        # https://github.com/pydata/pandas/issues/8158
-        # http://stackoverflow.com/questions/19350806/
-        # how-to-convert-columns-into-one-datetime-column-in-pandas
-        y = np.array(df_obs.year - 1970, dtype='<M8[Y]')
-        m = np.array(df_obs.month - 1, dtype='<m8[M]')
-        d = np.array(df_obs.day - 1, dtype='<m8[D]')
-        
-        a_time = (pd.to_datetime(y + m + d).values + 
-                  pd.to_timedelta(df_obs.hour, 'h').values)
-        
-        df_obs.set_index(pd.to_datetime(a_time, utc=True), inplace=True)
-        
-        df_obs['tair'] = df_obs['tair'] / 10.0
-        df_obs['tdew'] = df_obs['tdew'] / 10.0
-        
-        # Trace prcp is represented with -1. Set to 0 for now
-        df_obs.loc[df_obs.prcp == -1, 'prcp'] = 0
-        df_obs['prcp'] = df_obs['prcp'] / 10.0
-
-        obs_hrly.append(df_obs)
-
-    if len(obs_hrly) > 0:
-
-        obs_hrly = pd.concat(obs_hrly)
-        
+    try:
+    
         if has_start_end:
             
-            mask_time = ((obs_hrly.index >= start_hr_utc) & 
-                         (obs_hrly.index < end_hr_utc))
-            obs_hrly.drop(obs_hrly.index[~mask_time], axis=0, inplace=True)
-        
-        
-        obs_hrly.index = obs_hrly.index.tz_convert(tz_name)
-        
-        stn_pres = calc_pressure(elev)
-        obs_hrly['rh'] = convert_tdew_to_rh(obs_hrly.tdew, obs_hrly.tair,
-                                            stn_pres)
-        obs_hrly['vpd'] = convert_tdew_to_vpd(obs_hrly.tdew, obs_hrly.tair,
-                                              stn_pres)
-        
-        obs_dly = obs_hrly[['tair', 'tdew', 'rh',
-                            'vpd', 'prcp']].resample('D', how=['mean', 'min',
-                                                               'max', 'count',
-                                                               'sum'])
-        # http://stackoverflow.com/questions/14507794/
-        # python-pandas-how-to-flatten-a-hierarchical-index-in-columns
-        obs_dly.columns = ['_'.join(col) for col in obs_dly.columns.values]
-        
-        obs_dly.rename(columns={'tair_min':'tmin', 'tair_max':'tmax',
-                                'tdew_mean':'tdew', 'tdew_min':'tdewmin',
-                                'tdew_max':'tdewmax', 'vpd_mean':'vpd',
-                                'vpd_min':'vpdmin', 'vpd_max':'vpdmax',
-                                'rh_mean':'rh', 'rh_min':'rhmin',
-                                'rh_max':'rhmax', 'prcp_sum':'prcp'},
-                       inplace=True)
-                
-        # Set days that don't have minimum number of hourly obs to missing
-        # Need to account for daylight savings days that only have 23 hours
-        # Get the number of hours in each day
-        hr_cnt = pd.Series(0,pd.date_range(obs_dly.index[0].date(),
-                                           obs_dly.index[-1].date()+pd.Timedelta(days=1),
-                                           freq='h',closed='left',tz=tz_name),
-                           name='hr_cnt')
-        hr_cnt = hr_cnt.resample('D',how='count')
-        #Subtract hour count from 24 to get offset for minimum number of observation
-        #thresholds
-        hr_cnt = 24 - hr_cnt
-        #Set any negative offsets (i.e.-day with 25 hours) to 0
-        hr_cnt[hr_cnt < 0] = 0
-        obs_dly = obs_dly.join(hr_cnt)
-        
-        for a_elem in elems:
-            
-            cnt_vname = IsdLiteObsIO._elem_to_cnt_vname[a_elem]
-        
-            mask_low_cnt = (obs_dly[cnt_vname] <
-                            (min_hrly_for_dly[a_elem]- obs_dly.hr_cnt)).values
-        
-            obs_dly.loc[mask_low_cnt, a_elem] = np.nan
-        
-        obs_dly.drop(obs_dly.columns[~obs_dly.columns.isin(elems)], axis=1,
-                     inplace=True)
-        
-        obs_dly.index = obs_dly.index.tz_localize(None)
-        obs_dly = obs_dly.stack().reset_index()
-        obs_dly.rename(columns={'level_0':'time', 'level_1':'elem', 0:'obs_value'},
-                       inplace=True)
-        obs_dly['station_id'] = stn_id
-        
-        return obs_dly
+            #subset to years that only intersect with start/end date years requested
+            start_hr_utc = _get_begin_end_utc(start_date, tz_name)[0]
+            end_hr_utc = _get_begin_end_utc(end_date, tz_name)[1]
+            yrs_req = np.unique(pd.date_range(start_hr_utc.date(), end_hr_utc.date(),
+                                              freq='D').year)
+            yrs = np.intersect1d(yrs, yrs_req, True)
     
-    else:
+        obs_hrly = []
         
-        return None
+        for yr in yrs:
+            
+            try:
+                        
+                fileobj = StringIO()
+                cmd_ftp = 'RETR pub/data/noaa/isd-lite/%d/%s-%d.gz'%(yr, stn_id, yr)
+                _download_obs.ftp.retrbinary(cmd_ftp, fileobj.write)
+                fileobj.seek(0)
+                fileobj = GzipFile(fileobj=fileobj,mode='rb')
+            
+            except Exception as e:
+                
+                if e.args[0][-25:] == 'No such file or directory':
+                    # Year file does not exist for station. Continue to next year
+                    continue
+                else:
+                    raise
+                    
+            df_obs = pd.read_fwf(fileobj, _ISD_FWF_COLSPECS, header=None,
+                                 names=_ISD_FWF_COLNAMES, na_values=['-9999'])
+            
+            # https://github.com/pydata/pandas/issues/8158
+            # http://stackoverflow.com/questions/19350806/
+            # how-to-convert-columns-into-one-datetime-column-in-pandas
+            y = np.array(df_obs.year - 1970, dtype='<M8[Y]')
+            m = np.array(df_obs.month - 1, dtype='<m8[M]')
+            d = np.array(df_obs.day - 1, dtype='<m8[D]')
+            
+            a_time = (pd.to_datetime(y + m + d).values + 
+                      pd.to_timedelta(df_obs.hour, 'h').values)
+            
+            df_obs.set_index(pd.to_datetime(a_time, utc=True), inplace=True)
+            
+            df_obs['tair'] = df_obs['tair'] / 10.0
+            df_obs['tdew'] = df_obs['tdew'] / 10.0
+            
+            # Trace prcp is represented with -1. Set to 0 for now
+            df_obs.loc[df_obs.prcp == -1, 'prcp'] = 0
+            df_obs['prcp'] = df_obs['prcp'] / 10.0
+    
+            if has_start_end:
+                
+                mask_time = ((df_obs.index >= start_hr_utc) & 
+                             (df_obs.index < end_hr_utc))
+                df_obs.drop(df_obs.index[~mask_time], axis=0, inplace=True)
+            
+            if not df_obs.empty:
+            
+                obs_hrly.append(df_obs)
+        
+        if len(obs_hrly) > 0:
+    
+            obs_hrly = pd.concat(obs_hrly)
+                        
+            obs_hrly.index = obs_hrly.index.tz_convert(tz_name)
+            
+            stn_pres = calc_pressure(elev)
+            obs_hrly['rh'] = convert_tdew_to_rh(obs_hrly.tdew, obs_hrly.tair,
+                                                stn_pres)
+            obs_hrly['vpd'] = convert_tdew_to_vpd(obs_hrly.tdew, obs_hrly.tair,
+                                                  stn_pres)
+            
+            obs_dly = obs_hrly[['tair', 'tdew', 'rh',
+                                'vpd', 'prcp']].resample('D', how=['mean', 'min',
+                                                                   'max', 'count',
+                                                                   'sum'])
+            # http://stackoverflow.com/questions/14507794/
+            # python-pandas-how-to-flatten-a-hierarchical-index-in-columns
+            obs_dly.columns = ['_'.join(col) for col in obs_dly.columns.values]
+            
+            obs_dly.rename(columns={'tair_min':'tmin', 'tair_max':'tmax',
+                                    'tdew_mean':'tdew', 'tdew_min':'tdewmin',
+                                    'tdew_max':'tdewmax', 'vpd_mean':'vpd',
+                                    'vpd_min':'vpdmin', 'vpd_max':'vpdmax',
+                                    'rh_mean':'rh', 'rh_min':'rhmin',
+                                    'rh_max':'rhmax', 'prcp_sum':'prcp'},
+                           inplace=True)
+                    
+            # Set days that don't have minimum number of hourly obs to missing
+            # Need to account for daylight savings days that only have 23 hours
+            # Get the number of hours in each day
+            hr_cnt = pd.Series(0,pd.date_range(obs_dly.index[0].date(),
+                                               obs_dly.index[-1].date()+pd.Timedelta(days=1),
+                                               freq='h',closed='left',tz=tz_name),
+                               name='hr_cnt')
+            hr_cnt = hr_cnt.resample('D',how='count')
+            #Subtract hour count from 24 to get offset for minimum number of observation
+            #thresholds
+            hr_cnt = 24 - hr_cnt
+            #Set any negative offsets (i.e.-day with 25 hours) to 0
+            hr_cnt[hr_cnt < 0] = 0
+            obs_dly = obs_dly.join(hr_cnt)
+            
+            for a_elem in elems:
+                
+                cnt_vname = IsdLiteObsIO._elem_to_cnt_vname[a_elem]
+            
+                mask_low_cnt = (obs_dly[cnt_vname] <
+                                (min_hrly_for_dly[a_elem]- obs_dly.hr_cnt)).values
+            
+                obs_dly.loc[mask_low_cnt, a_elem] = np.nan
+            
+            obs_dly.drop(obs_dly.columns[~obs_dly.columns.isin(elems)], axis=1,
+                         inplace=True)
+            
+            obs_dly.index = obs_dly.index.tz_localize(None)
+            obs_dly = obs_dly.stack().reset_index()
+            obs_dly.rename(columns={'level_0':'time', 'level_1':'elem',
+                                    0:'obs_value'}, inplace=True)
+            obs_dly['station_id'] = stn_id
+            
+            return obs_dly
+        
+        else:
+            
+            return None
+
+    except Exception as e:
+        
+        print "Error for station "+stn_id+": "+str(e)
+        
+        
 
 class IsdLiteObsIO(ObsIO):
 
@@ -196,10 +216,14 @@ class IsdLiteObsIO(ObsIO):
                               'tdewmax': 18, 'vpd':18, 'vpdmin':18, 'vpdmax':18,
                               'rh':18, 'rhmin':18, 'rhmax':18, 'prcp': 24}
 
-    def __init__(self, min_hrly_for_dly=None, **kwargs):
+    def __init__(self, nprocs=1, min_hrly_for_dly=None, **kwargs):
 
         super(IsdLiteObsIO, self).__init__(**kwargs)
-                
+        
+        if nprocs < 0 or nprocs > 3:
+            raise ValueError("Number of processes must be between 1 and 3.")
+        
+        self.nprocs = nprocs
         self.min_hrly_for_dly = (min_hrly_for_dly if min_hrly_for_dly
                                  else self._MIN_HRLY_FOR_DLY_DFLT)
         # check to make sure there is an entry in min_hrly_for_dly for each
@@ -307,7 +331,8 @@ class IsdLiteObsIO(ObsIO):
             else:
                 stns_obs = self.stns.loc[stns_ids]
             
-            obs_all = []
+            nstns = len(stns_obs.station_id)
+            nprocs = self.nprocs if nstns >= self.nprocs else nstns
             
             if self.has_start_end_dates:
                 start_date = self.start_date
@@ -315,20 +340,50 @@ class IsdLiteObsIO(ObsIO):
             else:
                 start_date = None
                 end_date = None
-
-            for stn_id, a_stn in stns_obs.iterrows():
-                
-                obs_stn = _parse_obs(a_stn, start_date, end_date, self.elems,
-                                     self.min_hrly_for_dly)
+                                            
+            iter_stns = [(row[1], start_date, end_date, self.elems,
+                          self.min_hrly_for_dly) for row in stns_obs.iterrows()]
                         
-                obs_all.append(obs_stn)
-
-            obs_all = pd.concat(obs_all, ignore_index=True)
-
+            if nprocs > 1:
+                
+                # http://stackoverflow.com/questions/24171725/
+                # scikit-learn-multicore-attributeerror-stdin-instance-
+                # has-no-attribute-close
+                if not hasattr(sys.stdin, 'close'):
+                    def dummy_close():
+                        pass
+                    sys.stdin.close = dummy_close
+    
+                pool = Pool(processes=nprocs,initializer=_init_worker,
+                            initargs=[_download_obs])
+                obs_all = pool.map(_download_obs, iter_stns, chunksize=1)
+                pool.close()
+                pool.join()
+                
+            else:
+                
+                obs_all = []
+                
+                _init_worker(_download_obs)
+                
+                for a_stn in iter_stns:
+                    
+                    obs_stn = _download_obs(a_stn)
+                    obs_all.append(obs_stn)
+                
+                _download_obs.ftp.close()
+            
+            try:
+                obs_all = pd.concat(obs_all, ignore_index=True)
+            except ValueError:
+                # No valid observations
+                obs_all = pd.DataFrame({'station_id':[], 'elem':[], 'time':[],
+                                        'obs_value':[]})
+            
         finally:
 
             pd.set_option('mode.chained_assignment', opt_val)
-
+            
         obs_all = obs_all.set_index(['station_id', 'elem', 'time'])
         obs_all = obs_all.sortlevel(0, sort_remaining=True)
 
