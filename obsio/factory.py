@@ -77,7 +77,7 @@ class ObsIoFactory(object):
 
         The National Resources Conservation Service (NRCS) Air-Water Database
         (AWDB) contains observations from the NRCS Snow Telemetry and Soil
-        Climate Analysis networks (SNOTEL, SCAN). This ObsIO accesses daily
+        Climate Analysis networks (SNOTEL, SCAN). This ObsIO accesses
         SNOTEL and SCAN observations directly via the AWDB SOAP web service
         (http://www.wcc.nrcs.usda.gov/web_service/awdb_web_service_landing.htm)
         and does not require the data to be stored locally. Currently 
@@ -87,7 +87,34 @@ class ObsIoFactory(object):
         - 'prcp' : daily total precipitation (mm)
         - 'snwd' : snow depth (mm)
         - 'swe' : snow water equivalent (mm)
-
+        - 'tdew' : daily average dewpoint (C)
+        - 'tdewmin' : daily minimum dewpoint (C)
+        - 'tdewmax' : daily maximum dewpoint (C)
+        - 'vpd' : daily average vapor pressure deficit (Pa)
+        - 'vpdmin' : daily minimum vapor pressure deficit (Pa)
+        - 'vpdmax' : daily maximum vapor pressure deficit (Pa)
+        - 'rh' : daily average relative humidity (%)
+        - 'rhmin' : daily minimum relative humidity (%)
+        - 'rhmax' : daily minimum relative humidity (%)
+        
+        All humidity variables (tdew, vpd, rh) are aggregated from hourly values
+        
+        Parameters
+        ----------
+        min_hrly_for_dly : dict, optional
+            The number of hourly observations required to
+            calculate a daily value for the humidity variables, e.g: {'tdew':4}.
+            If not specified, the default values are:
+            - 'tdew' : 4
+            - 'tdewmin' : 18
+            - 'tdewmax' : 18
+            - 'vpd' : 18
+            - 'vpdmin' : 18
+            - 'vpdmax' : 18
+            - 'rh' : 18
+            - 'rhmin' : 18
+            - 'rhmax' : 18
+        
         Returns
         ----------
         obsio.ObsIO
@@ -360,9 +387,9 @@ class ObsIoFactory(object):
         - 'vpd' : daily average vapor pressure deficit (Pa)
         - 'vpdmin' : daily minimum vapor pressure deficit (Pa)
         - 'vpdmax' : daily maximum vapor pressure deficit (Pa)
-        - 'rh' : daily average relative humidity (Pa)
-        - 'rhmin' : daily minimum relative humidity (Pa)
-        - 'rhmax' : daily minimum relative humidity (Pa)
+        - 'rh' : daily average relative humidity (%)
+        - 'rhmin' : daily minimum relative humidity (%)
+        - 'rhmax' : daily minimum relative humidity (%)
         - 'prcp' : daily total precipitation (mm)
 
         Parameters
@@ -415,9 +442,9 @@ class ObsIoFactory(object):
         - 'vpd' : daily average vapor pressure deficit (Pa)
         - 'vpdmin' : daily minimum vapor pressure deficit (Pa)
         - 'vpdmax' : daily maximum vapor pressure deficit (Pa)
-        - 'rh' : daily average relative humidity (Pa)
-        - 'rhmin' : daily minimum relative humidity (Pa)
-        - 'rhmax' : daily minimum relative humidity (Pa)
+        - 'rh' : daily average relative humidity (%)
+        - 'rhmin' : daily minimum relative humidity (%)
+        - 'rhmax' : daily minimum relative humidity (%)
         - 'prcp' : daily total precipitation (mm)
         - 'srad' : daily 24-hr average incoming solar radiation (w m-2)
         - 'wspd' : daily average windspeed (m s-1)
