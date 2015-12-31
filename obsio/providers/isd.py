@@ -132,7 +132,7 @@ def _download_obs(args):
     
             obs_hrly = pd.concat(obs_hrly)
                         
-            obs_hrly.index = obs_hrly.index.tz_convert(tz_name)
+            obs_hrly.index = obs_hrly.index.tz_convert(tz_name).tz_localize(None)
             
             stn_pres = calc_pressure(elev)
             obs_hrly['rh'] = convert_tdew_to_rh(obs_hrly.tdew, obs_hrly.tair,
@@ -163,6 +163,7 @@ def _download_obs(args):
                                                obs_dly.index[-1].date()+pd.Timedelta(days=1),
                                                freq='h',closed='left',tz=tz_name),
                                name='hr_cnt')
+            hr_cnt = hr_cnt.tz_localize(None)
             hr_cnt = hr_cnt.resample('D',how='count')
             #Subtract hour count from 24 to get offset for minimum number of observation
             #thresholds
@@ -183,7 +184,6 @@ def _download_obs(args):
             obs_dly.drop(obs_dly.columns[~obs_dly.columns.isin(elems)], axis=1,
                          inplace=True)
             
-            obs_dly.index = obs_dly.index.tz_localize(None)
             obs_dly = obs_dly.stack().reset_index()
             obs_dly.rename(columns={'level_0':'time', 'level_1':'elem',
                                     0:'obs_value'}, inplace=True)
