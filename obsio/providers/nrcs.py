@@ -258,7 +258,7 @@ def _extract_vpd(obs_dly, obs_hrly, min_hrly_for_dly, stns):
     obs_hrly['VPD-RHUMV_TAVG'] = convert_rh_to_vpd(obs_hrly.RHUMV,
                                                    obs_hrly.TAVG,
                                                    obs_hrly.pressure)
-    obs_hrly['VPD-RHUM_TOBS'] = convert_rh_to_vpd(obs_hrly.RHUMV,
+    obs_hrly['VPD-RHUM_TOBS'] = convert_rh_to_vpd(obs_hrly.RHUM,
                                                    obs_hrly.TOBS,
                                                    obs_hrly.pressure)    
     obs_hrly['VPD-RHUMV_TOBS'] = convert_rh_to_vpd(obs_hrly.RHUMV,
@@ -390,7 +390,7 @@ class _NrcsHourly():
         obs_all = []
 
         for a_elem in self.nrcs_elems:
-
+                        
             datas = _execute_awdb_call(self._client.service.getHourlyData,
                                        stationTriplets=list(stns.stationTriplet),
                                        elementCd=[a_elem],
@@ -431,6 +431,11 @@ class _NrcsHourly():
         try:
             
             obs_all = pd.concat(obs_all, axis=0, ignore_index=True)
+            
+            # Remove possible duplicate entries
+            obs_all.drop_duplicates(['time', 'stationTriplet', 'elem'],
+                                    keep='first', inplace=True)
+            
             obs_all.set_index(['time', 'stationTriplet', 'elem'], inplace=True)
             obs_all = obs_all.unstack(level=2)
             obs_all.columns = [a_col[1] for a_col in obs_all.columns.values]
@@ -658,7 +663,24 @@ class NrcsObsIO(ObsIO):
              
         obs_dly = self._nrcs_dly.read_obs(start_date_obs, end_date_obs, stns_obs)
         obs_hrly = self._nrcs_hrly.read_obs(start_date_obs, end_date_obs, stns_obs)
-  
+        
+        def check_empty(df_obs):
+            
+            if df_obs.empty:
+                
+                df_obs = pd.DataFrame(np.nan, index=np.arange(len(stns_obs)),
+                                      columns=df_obs.columns)
+                df_obs.time = pd.Timestamp.now()
+                df_obs.stationTriplet = stns_obs.stationTriplet.values
+            
+            return df_obs
+        
+        # So aggregation functions don't fail, 
+        # make sure observation dataframes aren't empty and at least have rows
+        # of nan values
+        obs_dly = check_empty(obs_dly)
+        obs_hrly = check_empty(obs_hrly)
+        
         obs = [a_func(obs_dly, obs_hrly, self.min_hrly_for_dly, stns_obs) for
                a_func in self._elem_funcs]
         obs = pd.concat(obs, axis=0, ignore_index=True)
