@@ -1,10 +1,10 @@
+from ..util.humidity import calc_pressure, convert_rh_to_tdew, \
+    convert_rh_to_vpd, convert_rh_to_vpd_daily
 from .generic import ObsIO
 from StringIO import StringIO
 from calendar import monthrange
 from datetime import datetime
 from multiprocessing import Pool
-from obsio.util.humidity import convert_rh_to_tdew, calc_pressure, \
-    convert_rh_to_vpd, convert_rh_to_vpd_daily
 import numpy as np
 import os
 import pandas as pd
@@ -198,8 +198,32 @@ def _parse_raws_hrly_webform(stn_id, stn_pres, start_date, end_date, pwd,
     response = urllib2.urlopen(req)
     lines = response.readlines()
     
-    obs = pd.read_csv(StringIO("".join(lines[16:-14])), delim_whitespace=True)
+    try:
     
+        obs = pd.read_csv(StringIO("".join(lines[16:-14])),
+                          delim_whitespace=True)
+        
+        if obs.empty:
+            
+            # Could parse but empty
+            # Create dataframe with one row of dummy data
+            obs = pd.DataFrame([('201001010000',np.nan, np.nan)],
+                               columns=[':YYYYMMDDhhmm','Temp','Humidty'])
+    
+    except ValueError as e:
+        
+        if (e.args[0] == 'No columns to parse from file' and
+            lines[3][32:60] != 'WRCC data access information'):
+            
+            # No available observations
+            # Create dataframe with one row of dummy data
+            obs = pd.DataFrame([('201001010000',np.nan, np.nan)],
+                               columns=[':YYYYMMDDhhmm','Temp','Humidty'])
+            
+        else:
+            #No access or other error
+            raise
+        
     obs.rename(columns={':YYYYMMDDhhmm':'time', 'Temp':'tair', 'Humidty':'rh'},
                inplace=True)
     obs.replace(-9999, np.nan, inplace=True)
@@ -211,6 +235,10 @@ def _parse_raws_hrly_webform(stn_id, stn_pres, start_date, end_date, pwd,
         # one or more dates had an incorrect format
         # remove observations that have incorrect date format
         obs.dropna(axis=0, how='all', subset=['time'], inplace=True)
+        
+        # make sure tair and hr columns are numeric
+        obs['tair'] = pd.to_numeric(obs.tair, errors='coerce')
+        obs['rh'] = pd.to_numeric(obs.rh, errors='coerce')
     
     obs.set_index('time', inplace=True)
     
@@ -350,9 +378,9 @@ def _parse_raws_webform(args):
         except ValueError:
             
             # No valid hourly observations                
-            print ("Warning: Could not access hourly humidity observations "
-                   "for station %s. Reverting back estimates from daily temperature "
-                   "and humidity variables.") % stn_id
+            print ("Warning: Password provided, but could not access hourly "
+                   "humidity observations for station %s. Reverting back to "
+                   "estimates from daily temperature and humidity variables.")% stn_id
     
     obs = obs[elems].copy()
     
