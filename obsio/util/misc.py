@@ -7,6 +7,8 @@ import pycurl
 from StringIO import StringIO
 from gzip import GzipFile
 from time import sleep
+from datetime import datetime
+import os
 
 # tzwhere currently sets log level to debug when imported
 # get log level before import and then reset log level to this
@@ -288,4 +290,52 @@ def open_remote_file(url, maxtries=3):
             sleep(1)
     
     return buf
+
+def download_if_new_ftp(a_ftp, fpath_ftp, fpath_local):
+    """Download file from FTP if newer than local copy
     
+    Parameters
+    ----------
+    a_ftp : ftplib.FTP object
+    fpath_ftp : str
+        Path to file on FTP
+    fpath_local : str
+        Path to file stored locally
+            
+    Returns
+    ----------
+    boolean
+        Returns True if a new file was downloaded, otherwise False
+    """
+    
+    downloaded_file = False
+    
+    mtime_remote = datetime.strptime(a_ftp.sendcmd("MDTM %s"%fpath_ftp),
+                                     "213 %Y%m%d%H%M%S")
+    #need to set to binary for size cmd
+    a_ftp.voidcmd("TYPE I")
+    size_remote = a_ftp.size(fpath_ftp)
+    
+    try:
+    
+        mtime_local = datetime.utcfromtimestamp(os.path.getmtime(fpath_local))
+        size_local = os.path.getsize(fpath_local)
+    
+    except OSError as e:
+        
+        if e.args[-1] == 'No such file or directory':
+            mtime_local = None
+            size_local = None
+        else:
+            raise
+    
+    if (size_remote != size_local) or (mtime_remote > mtime_local):
+        
+        print "Downloading %s to %s..."%(fpath_ftp, fpath_local)
+        
+        with open(fpath_local, 'wb') as f:
+            a_ftp.retrbinary("RETR " + fpath_ftp, f.write)
+        
+        downloaded_file = True
+        
+    return downloaded_file

@@ -1,27 +1,18 @@
 from .. import LOCAL_DATA_PATH
+from ..util.misc import download_if_new_ftp
 from .generic import ObsIO
-from urlparse import urljoin
-import datetime
+from ftplib import FTP
 import numpy as np
 import os
 import pandas as pd
-import subprocess
 import tarfile
-
-
-_RPATH_GHCND = 'ftp://ftp.ncdc.noaa.gov/pub/data/ghcn/daily/'
 
 _NETWORK_CODE_TO_SUBPROVIDER = {'0': '', '1': 'CoCoRaHS', 'C': 'COOP', 'E': 'ECA&D',
                                 'M': 'WMO', 'N': ('National Meteorological or '
                                                   'Hydrological Center'),
                                 'R': 'RAWS', 'S': 'SNOTEL', 'W': 'WBAN'}
-_MONTH_DAYS = np.arange(1, 32)
-
-_OBS_COLUMN_SIZE = 8
-
 _MISSING = -9999.0
-
-
+    
 def _convert_units(element, value):
 
     if value == -9999:
@@ -36,27 +27,43 @@ def _convert_units(element, value):
     else:
         raise ValueError("".join(["Unrecognized element type: ", element]))
 
-
-class GhcndObsIO(ObsIO):
+   
+class GhcndBulkObsIO(ObsIO):
 
     _avail_elems = ['tmin', 'tmax', 'prcp', 'tobs_tmin', 'tobs_tmax',
                     'tobs_prcp']
+    
     _requires_local = True
 
-    def __init__(self, local_data_path=None, **kwargs):
+    _convert_units_funcs = {'tmin':lambda x: x / 10.0,  # tenths of degC to degC
+                            'tmax':lambda x: x / 10.0,  # tenths of degC to degC
+                            'prcp':lambda x: x / 10.0}  # tenths of mm to mm
+                            
 
-        super(GhcndObsIO, self).__init__(**kwargs)
+    def __init__(self, local_data_path=None, download_updates=True, **kwargs):
+
+        super(GhcndBulkObsIO, self).__init__(**kwargs)
 
         self.local_data_path = (local_data_path if local_data_path
                                 else LOCAL_DATA_PATH)
-    
         self.path_ghcnd_data = os.path.join(self.local_data_path, 'GHCND')
-       
         if not os.path.isdir(self.path_ghcnd_data):
             os.mkdir(self.path_ghcnd_data)
+            
+        self.download_updates = download_updates
+        self._download_run = False
+        
+        # Split out normal elems and time-of-observation elements
+        elems = np.array(self.elems)
+        mask_tobs = np.char.startswith(elems, 'tobs')
+        self._elems = elems[~mask_tobs]
+        self._elems_tobs = elems[mask_tobs]  
+        self._has_tobs = self._elems_tobs.size > 0
        
         self._a_obs_tarfile = None
         self._a_df_tobs = None
+        self._a_colspecs = None
+        
 
     @property
     def _df_tobs(self):
@@ -103,7 +110,7 @@ class GhcndObsIO(ObsIO):
                 a_df['time'] = pd.to_datetime(a_df['time'], format="%Y%m%d")
 
                 if self.has_start_end_dates:
-                    mask_time = ((a_df['time'] >= self.start_date) &
+                    mask_time = ((a_df['time'] >= self.start_date) & 
                                  (a_df['time'] <= self.end_date))
                     a_df = a_df[mask_time].copy()
 
@@ -116,18 +123,51 @@ class GhcndObsIO(ObsIO):
         return self._a_df_tobs
 
     @property
+    def _colspecs(self):
+        
+        if self._a_colspecs is None:
+        
+            # ID,YEAR,MONTH,ELEMENT
+            colspecs = [(0, 11), (11, 15), (15, 17), (17, 21)]
+            colnames = ['station_id', 'year', 'month', 'elem']
+            
+            offset = 0
+            obs_column_size = 8
+        
+            for day in np.arange(1, 32):
+                
+                cs_value = (21 + offset, offset + 26)
+                cs_mflag = (26 + offset, offset + 27)
+                cs_qflag = (27 + offset, offset + 28)
+                cs_sflag = (28 + offset, offset + 29)
+                
+                colspecs.extend([cs_value, cs_mflag, cs_qflag, cs_sflag])
+                colnames.extend(['OBSV%.2d' % day, 'MFLG%.2d' % day,
+                                 'QFLG%.2d' % day, 'SFLG%.2d' % day])
+                
+                offset += obs_column_size
+                
+            self._a_colspecs = colspecs, colnames
+        
+        return self._a_colspecs
+
+    @property
     def _obs_tarfile(self):
 
         if self._a_obs_tarfile is None:
 
             print "GhcndObsIO: Initializing ghcnd_all.tar for reading..."
-            fpath = os.path.join(self.path_ghcnd_data, 'ghcnd_all.tar')
+            fpath = os.path.join(self.path_ghcnd_data, 'ghcnd_all.tar.gz')
             self._a_obs_tarfile = tarfile.open(fpath)
             self._a_obs_tarfile.getnames()
 
         return self._a_obs_tarfile
 
     def _read_stns(self):
+        
+        if self.download_updates and not self._download_run:
+
+            self.download_local()
 
         stns = pd.read_fwf(os.path.join(self.path_ghcnd_data,
                                         'ghcnd-stations.txt'),
@@ -146,35 +186,37 @@ class GhcndObsIO(ObsIO):
 
         if self.bbox is not None:
 
-            mask_bnds = ((stns.latitude >= self.bbox.south) &
-                         (stns.latitude <= self.bbox.north) &
-                         (stns.longitude >= self.bbox.west) &
+            mask_bnds = ((stns.latitude >= self.bbox.south) & 
+                         (stns.latitude <= self.bbox.north) & 
+                         (stns.longitude >= self.bbox.west) & 
                          (stns.longitude <= self.bbox.east))
 
             stns = stns[mask_bnds].copy()
 
+        
+
+        fpath_inv = os.path.join(self.path_ghcnd_data,
+                                 'ghcnd-inventory.txt')
+
+        stn_inv = pd.read_fwf(fpath_inv,
+                              colspecs=[
+                                  (0, 11), (31, 35), (36, 40), (41, 45)],
+                              header=None, names=['station_id',
+                                                  'elem', 'start_year',
+                                                  'end_year'])
+        stn_inv['elem'] = stn_inv.elem.str.lower()
+        stn_inv = stn_inv[stn_inv.elem.isin(self.elems)]
+        stn_inv = stn_inv.groupby('station_id').agg({'end_year': np.max,
+                                                     'start_year': np.min})
+        stn_inv = stn_inv.reset_index()
+
+        stns = pd.merge(stns, stn_inv, on='station_id')
+
         if self.has_start_end_dates:
 
-            fpath_inv = os.path.join(self.path_ghcnd_data,
-                                     'ghcnd-inventory.txt')
-
-            stn_inv = pd.read_fwf(fpath_inv,
-                                  colspecs=[
-                                      (0, 11), (31, 35), (36, 40), (41, 45)],
-                                  header=None, names=['station_id',
-                                                      'elem', 'start_year',
-                                                      'end_year'])
-            stn_inv['elem'] = stn_inv.elem.str.lower()
-            stn_inv = stn_inv[stn_inv.elem.isin(self.elems)]
-            stn_inv = stn_inv.groupby('station_id').agg({'end_year': np.max,
-                                                         'start_year': np.min})
-            stn_inv = stn_inv.reset_index()
-
-            stns = pd.merge(stns, stn_inv, on='station_id')
-
-            mask_por = (((self.start_date.year <= stns.start_year) &
-                         (stns.start_year <= self.end_date.year)) |
-                        ((stns.start_year <= self.start_date.year) &
+            mask_por = (((self.start_date.year <= stns.start_year) & 
+                         (stns.start_year <= self.end_date.year)) | 
+                        ((stns.start_year <= self.start_date.year) & 
                          (self.start_date.year <= stns.end_year)))
 
             stns = stns[mask_por].copy()
@@ -185,101 +227,118 @@ class GhcndObsIO(ObsIO):
         return stns
 
     def download_local(self):
-
+                
         local_path = self.path_ghcnd_data
         
-        print "Downloading ghcnd-version.txt..."
-        subprocess.call(['wget', '-N', '--directory-prefix=' + local_path,
-                         '--no-verbose', urljoin(_RPATH_GHCND,
-                                                 'ghcnd-version.txt')])
+        ftp = FTP('ftp.ncdc.noaa.gov')
+        ftp.login()
         
-        print "Downloading status.txt..."
-        subprocess.call(['wget', '-N', '--directory-prefix=' + local_path,
-                         '--no-verbose', urljoin(_RPATH_GHCND, 'status.txt')])
+        download_if_new_ftp(ftp, 'pub/data/ghcn/daily/ghcnd-version.txt',
+                            os.path.join(local_path, 'ghcnd-version.txt'))
         
-        print "Downloading readme.txt..."
-        subprocess.call(['wget', '-N', '--directory-prefix=' + local_path,
-                         '--no-verbose', urljoin(_RPATH_GHCND, 'readme.txt')])
+        download_if_new_ftp(ftp, 'pub/data/ghcn/daily/status.txt',
+                            os.path.join(local_path, 'status.txt'))
+
+        download_if_new_ftp(ftp, 'pub/data/ghcn/daily/readme.txt',
+                            os.path.join(local_path, 'readme.txt'))
         
-        print "Downloading ghcnd-inventory.txt..."
-        subprocess.call(['wget', '-N', '--directory-prefix=' + local_path,
-                         '--no-verbose', urljoin(_RPATH_GHCND,
-                                                 'ghcnd-inventory.txt')])
-
-        print "Downloading ghcnd-stations.txt..."
-        subprocess.call(['wget', '-N', '--directory-prefix=' + local_path,
-                         '--no-verbose', urljoin(_RPATH_GHCND,
-                                                 'ghcnd-stations.txt')])
+        download_if_new_ftp(ftp, 'pub/data/ghcn/daily/ghcnd-inventory.txt',
+                            os.path.join(local_path, 'ghcnd-inventory.txt'))
         
-        print "Downloading ~3.0GB ghcnd_all.tar.gz..."
-        subprocess.call(['wget', '-N', '--directory-prefix=' + local_path,
-                         '--no-verbose', urljoin(_RPATH_GHCND,
-                                                 'ghcnd_all.tar.gz')])
-
-        print "Unzipping ghcnd_all.tar.gz..."
-        subprocess.call(['gunzip', '-f',
-                         os.path.join(local_path, 'ghcnd_all.tar.gz')])
-
-        by_yr_dir = os.path.join(local_path, 'by_year')
-
-        if not os.path.isdir(by_yr_dir):
-            os.mkdir(by_yr_dir)
-
-        print "Downloading yearly files..."
-        subprocess.call(['wget', '-N', '--directory-prefix=' + by_yr_dir,
-                         '--no-verbose',
-                         urljoin(_RPATH_GHCND, 'by_year/*.csv.gz')])
-
+        download_if_new_ftp(ftp, 'pub/data/ghcn/daily/ghcnd-stations.txt',
+                            os.path.join(local_path, 'ghcnd-stations.txt'))
+        
+        downloaded_tar = download_if_new_ftp(ftp, 'pub/data/ghcn/daily/ghcnd_all.tar.gz',
+                                              os.path.join(local_path, 'ghcnd_all.tar.gz'))
+        
+        if downloaded_tar:
+            
+            # Gunzip tar file
+            print ("Unzipping and extracting files from %s. "
+                   "This will take several minutes..." % 
+                   os.path.join(local_path, 'ghcnd_all.tar.gz'))
+            
+            with tarfile.open(os.path.join(local_path, 'ghcnd_all.tar.gz'), 'r') as targhcnd:
+            
+                targhcnd.extractall(local_path)
+                    
+        if self._has_tobs:
+        
+            by_yr_path = os.path.join(local_path, 'by_year')
+            if not os.path.isdir(by_yr_path):
+                os.mkdir(by_yr_path)
+                
+            if self.has_start_end_dates:
+            
+                start_year = self.start_date.year
+                end_year = self.end_date.year
+                
+                yr_fnames = ["%s.csv.gz" % yr for yr in np.arange(start_year,
+                                                                end_year + 1)]
+                
+            else:
+                
+                yr_fnames = np.array(ftp.nlst('pub/data/ghcn/daily/by_year'))
+                yr_fnames = list(yr_fnames[np.char.endswith(yr_fnames, ".csv.gz")])
+            
+            for fname in yr_fnames:
+                
+                download_if_new_ftp(ftp, 'pub/data/ghcn/daily/by_year/%s' % fname,
+                                    os.path.join(by_yr_path, fname))
+        
+        self._download_run = True
+        
     def _parse_stn_obs(self, stn_id):
+        
+        fpath = os.path.join(self.path_ghcnd_data, 'ghcnd_all',
+                             '%s.dly' % stn_id)
+                
+        colspecs, colnames = self._colspecs
+        
+        obs = pd.read_fwf(fpath, colspecs=colspecs, names=colnames, header=None,
+                          na_values=_MISSING)
 
-        fname = os.path.join('ghcnd_all', '%s.dly' % stn_id)
-
-        obs_file = self._obs_tarfile.extractfile(fname)
-        lines = obs_file.readlines()
-        obs_file.close()
-        del obs_file
-
-        all_obs = []
-
-        for line in lines:
-
-            year = int(line[11:15])
-            month = int(line[15:17])
-            element = line[17:21].strip().lower()
-
-            if element in self.elems:
-
-                offset = 0
-
-                for day in _MONTH_DAYS:
-
-                    try:
-                        # throw error if not valid date
-                        a_date = datetime.date(year, month, day)
-                    except ValueError:
-                        # Indicates invalid date, do not insert a record
-                        offset += _OBS_COLUMN_SIZE
-                        continue
-
-                    value = _convert_units(element,
-                                           float(line[21 + offset:offset + 26]))
-                    qflag = line[27 + offset:offset + 28].strip()
-
-                    all_obs.append((element, a_date, value, qflag))
-
-                    offset += _OBS_COLUMN_SIZE
-
-        df_obs = pd.DataFrame(all_obs, columns=['elem', 'time', 'obs_value',
-                                                'qa_flag'])
-
-        mask_good = (df_obs.obs_value != _MISSING) & (df_obs.qa_flag == '')
-
-        df_obs = df_obs[mask_good]
-        df_obs = df_obs.drop('qa_flag', axis=1)
-        df_obs['time'] = pd.DatetimeIndex(df_obs.time)
-        df_obs = df_obs.reset_index(drop=True)
-
-        return df_obs
+        obs.drop(obs.index[~obs.elem.str.lower().isin(self._elems)], axis=0,
+                 inplace=True)
+        
+        # https://github.com/pydata/pandas/issues/8158
+        # http://stackoverflow.com/questions/19350806/
+        # how-to-convert-columns-into-one-datetime-column-in-pandas
+        y = np.array(obs.year - 1970, dtype='<M8[Y]')
+        m = np.array(obs.month - 1, dtype='<m8[M]')
+        obs['time'] = pd.to_datetime(y + m)
+        obs.drop(['year', 'month'], axis=1, inplace=True)
+        
+        obs.set_index(['time', 'station_id', 'elem'], inplace=True)
+        obs = obs.stack().reset_index()
+        
+        obs['elem'] = obs.elem + "_" + obs.level_3.str.slice(0, 4)
+        obs['time'] = obs.time + np.array(obs.level_3.str.slice(-2).astype(np.int),
+                                          dtype='<m8[D]')
+                
+        obs = obs.pivot(index='time', columns='elem', values=0)
+        obs.columns = obs.columns.str.lower()
+                
+        for elem in self._elems:
+             
+            cname_qflg = "%s_qflg" % elem
+                        
+            obs.rename(columns={"%s_obsv" % elem:elem}, inplace=True)
+            
+            try:
+                obs.loc[(~obs[cname_qflg].isnull()).values, elem] = np.nan
+            except KeyError:
+                # No quality flag columns because no observations were flagged
+                pass
+            
+            obs[elem] = self._convert_units_funcs[elem](obs[elem].astype(np.float))
+        
+        obs.drop(obs.columns[~obs.columns.isin(self._elems)], axis=1,
+                 inplace=True)
+        
+        obs.columns.name = None
+        
+        return obs
 
     def read_obs(self, stns_ids=None):
 
@@ -303,18 +362,20 @@ class GhcndObsIO(ObsIO):
                 obs_stn = self._parse_stn_obs(a_id)
 
                 if self.has_start_end_dates:
-
-                    mask_time = ((obs_stn.time >= self.start_date) &
-                                 (obs_stn.time <= self.end_date))
-                    obs_stn = obs_stn[mask_time]
-
+                    
+                    obs_stn = obs_stn.loc[self.start_date:self.end_date]
+                
+                obs_stn = obs_stn.stack().reset_index()
+                obs_stn.rename(columns={'level_1':'elem', 0:'obs_value'},
+                               inplace=True)
+                
                 obs_stn['station_id'] = a_id
 
                 obs.append(obs_stn)
 
             df_obs = pd.concat(obs, ignore_index=True)
 
-            if np.any(np.char.startswith(np.array(self.elems), 'tobs')):
+            if self._has_tobs:
 
                 df_tobs = self._df_tobs[self._df_tobs.station_id.
                                         isin(stns_obs.station_id)].copy()

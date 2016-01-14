@@ -1412,8 +1412,8 @@ class MadisObsIO(ObsIO):
                               'rh':18, 'rhmin':18, 'rhmax':18, 'srad': 24,
                               'prcp': 24, 'wspd': 24}
 
-    def __init__(self, local_data_path=None, data_version=None, username=None,
-                 password=None, madis_datasets=None, local_time_zones=None,
+    def __init__(self, local_data_path=None, download_updates=True, data_version=None,
+                 username=None, password=None, madis_datasets=None, local_time_zones=None,
                  min_hrly_for_dly=None, nprocs=1, temp_path=None,
                  handle_dups=True, **kwargs):
 
@@ -1421,6 +1421,8 @@ class MadisObsIO(ObsIO):
 
         self.local_data_path = (local_data_path if local_data_path
                                 else LOCAL_DATA_PATH)
+        self.download_updates = download_updates
+        self._download_run = False
         self.data_version = (data_version if data_version else 'madisPublic1')
         self.madis_datasets = (madis_datasets if madis_datasets
                                else _MADIS_SFC_DATASETS)
@@ -1620,6 +1622,9 @@ class MadisObsIO(ObsIO):
         return self._a_df_obs
 
     def _read_stns(self):
+        
+        if self.download_updates and not self._download_run:
+            self.download_local()
 
         mask_dup = self._df_obs.duplicated(_UNIQ_STN_COLUMNS, keep='last')
 
@@ -1899,3 +1904,4 @@ class MadisObsIO(ObsIO):
                             self._url_base_madis, a_dspath, a_fname)
                         _wget_madis_file(url, path_local, self._username,
                                          self._password)
+        self._download_run = True              

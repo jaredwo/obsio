@@ -53,22 +53,19 @@ And then install obsio from source:
 Available Data Providers
 =============
 **obsio** currently has full or partial support for a number of climate and
-weather data providers. obsio distinguishes between two main types of providers:
-(1) providers that supply direct data access via web services; and (2) those
-that supply data through FTP-type access where data must first be downloaded
-and stored locally, and then parsed. Only daily elements are supported at this
+weather data providers. Only daily and monthly elements are supported at this
 time, but hourly and sub-hourly can easily be added.
 
 +---------------+-----------------------------------------+--------------------+
 | Provider Name | Currently Supported Elements            | Req. Local Storage |
 +===============+=========================================+====================+
-| ACIS_	        | tmin,tmax,prcp,tobs_tmin,tobs_tmax,	  |	No             |
+| ACIS_	        | tmin,tmax,prcp,tobs_tmin,tobs_tmax,	  |	No                 |
 |               | tobs_prcp                               |                    |
 +---------------+-----------------------------------------+--------------------+
 | GHCN-D_       | tmin,tmax,prcp,tobs_tmin,tobs_tmax,     | Yes                |
 |               | tobs_prcp                               |                    |
 +---------------+-----------------------------------------+--------------------+
-| ISDLite_      | tmin,tmax,tdew,tdewmin,tdewmax,vpd,     | Yes                |
+| ISDLite_      | tmin,tmax,tdew,tdewmin,tdewmax,vpd,     | No                 |
 |               | vpdmin,vpdmax,rh,rhmin,rhmax,prcp       |                    |
 +---------------+-----------------------------------------+--------------------+
 | MADIS_        | tmin,tmax,prcp,tdew,tdewmin,tdewmax,    | Yes                |
@@ -77,9 +74,9 @@ time, but hourly and sub-hourly can easily be added.
 +---------------+-----------------------------------------+--------------------+
 | NRCS_         | tmin,tmax,prcp,snwd,swe                 | No                 |
 +---------------+-----------------------------------------+--------------------+
-| USHCN_	| \*\_mth_raw,\*\_mth_tob,\*\_mth_fls     | Yes                |
+| USHCN_	    | \*\_mth_raw,\*\_mth_tob,\*\_mth_fls     | Yes                |
 +---------------+-----------------------------------------+--------------------+
-| WRCC_		| tmin,tmax,tdew,tdewmin,tdewmax,vpd,     | No                 |
+| WRCC_		    | tmin,tmax,tdew,tdewmin,tdewmax,vpd,     | No                 |
 |               | vpdmin,vpdmax,rh,rhmin,rhmax,prcp,srad, |                    |
 |               | wspd                                    |                    |
 +---------------+-----------------------------------------+--------------------+
@@ -213,15 +210,10 @@ obsio will default to a standard temporary directory. Example:
 	# the 'OBSIO_DATA' environmental variable will be checked. If 'OBSIO_DATA'
 	# doesn't exist, a default temporary directory will be used.
 	ghcnd_io = obsiof.create_obsio_dly_ghcnd()
-	
-	# Download GHCN-D data to local storage. Currently, an external call to
-	# wget is used to mirror the data at: ftp://ftp.ncdc.noaa.gov/pub/data/ghcn/daily/
-	# If data are already stored locally and recently updated data are not required,
-	# this step can be skipped.
-	ghcnd_io.download_local()
-		
-	# Access observations using read_obs() method. By default, read_obs() will
-	# return observations for all stations in the stns attribute
-	obs = nrcs_io.read_obs()
+			
+	# Access observations for first 10 stations using the read_obs() method.
+	# First call to read_obs() will take several minutes due to initial data
+	# download.
+	obs = ghcnd_io.read_obs(ghcnd_io.stns.station_id.iloc[0:10])
 
 	

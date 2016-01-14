@@ -1,5 +1,5 @@
 from .providers.acis import AcisObsIO
-from .providers.ghcnd import GhcndObsIO
+from .providers.ghcnd import GhcndBulkObsIO
 from .providers.isd import IsdLiteObsIO
 from .providers.madis import MadisObsIO
 from .providers.nrcs import NrcsObsIO
@@ -160,7 +160,8 @@ class ObsIoFactory(object):
                          start_date=self.start_date,
                          end_date=self.end_date)
 
-    def create_obsio_dly_ghcnd(self, local_data_path=None):
+    def create_obsio_dly_ghcnd(self, local_data_path=None,
+                               download_updates=True):
         """Create ObsIO to access daily observations from NCEI's GHCN-D.
 
         NOAA's National Centers for Environmental Information (NCEI) Global
@@ -182,22 +183,28 @@ class ObsIoFactory(object):
             The local path for downloading and storing GHCN-D data from the
             FTP site. If not specified, will use and create a GHCND directory
             in the path specified by the OBSIO_DATA environmental variable. If
-            OBSIO_DATA is not set, a default temporary path will be used. On
-            a call to obsio.ObsIO.download_local(), the ObsIO locally mirrors
-            the full ghcnd_all.tar.gz and yearly files with time-of-observation
-            data.
-
+            OBSIO_DATA is not set, a default temporary path will be used.
+        download_updates : boolean, optional
+            Check for and download any updated data files on the GHCN-D FTP site
+            that are newer than what is currently stored locally or have not yet
+            been downloaded. Default: True. Downloads will be performed when 
+            station and/or observation data are first requested. A download
+            of all necessary data files can be forced at any time by calling
+            download_local() on the ObsIO.
+            
         Returns
         ----------
         obsio.ObsIO
         """
 
-        return GhcndObsIO(local_data_path=local_data_path,
-                          elems=self.elems, bbox=self.bbox,
-                          start_date=self.start_date,
-                          end_date=self.end_date)
+        return GhcndBulkObsIO(local_data_path=local_data_path,
+                              download_updates=download_updates,
+                              elems=self.elems, bbox=self.bbox,
+                              start_date=self.start_date,
+                              end_date=self.end_date)
 
-    def create_obsio_mthly_ushcn(self, local_data_path=None):
+    def create_obsio_mthly_ushcn(self, local_data_path=None,
+                                 download_updates=True):
         """Create ObsIO to access monthly observations from NCEI's USHCN.
 
         NOAA's National Centers for Environmental Information (NCEI) U.S.
@@ -232,9 +239,15 @@ class ObsIoFactory(object):
             The local path for downloading and storing USHCN data from the
             FTP site. If not specified, will use and create a USHCN directory
             in the path specified by the OBSIO_DATA environmental variable. If
-            OBSIO_DATA is not set, a default temporary path will be used. On
-            a call to obsio.ObsIO.download_local(), the ObsIO locally mirrors
-            the USHCN FTP site.
+            OBSIO_DATA is not set, a default temporary path will be used.
+        download_updates : boolean, optional
+            Check for and download any updated data files on the USHCN FTP site
+            that are newer than what is currently stored locally or have not yet
+            been downloaded. Default: True. Downloads will be performed when 
+            station and/or observation data are first requested. A download
+            of all necessary data files can be forced at any time by calling
+            download_local() on the ObsIO.
+        
 
         Returns
         ----------
@@ -242,12 +255,13 @@ class ObsIoFactory(object):
         """
 
         return UshcnObsIO(local_data_path=local_data_path,
+                          download_updates=download_updates,
                           elems=self.elems, bbox=self.bbox,
                           start_date=self.start_date,
                           end_date=self.end_date)
 
-    def create_obsio_dly_madis(self, local_data_path=None, data_version=None,
-                               username=None, password=None,
+    def create_obsio_dly_madis(self, local_data_path=None, download_updates=True,
+                               data_version=None, username=None, password=None,
                                madis_datasets=None, local_time_zones=None,
                                min_hrly_for_dly=None, nprocs=1,
                                temp_path=None, handle_dups=True):
@@ -283,6 +297,13 @@ class ObsIoFactory(object):
             files. If not specified, will use and create a MADIS directory in
             the path specified by the OBSIO_DATA environmental variable. If
             OBSIO_DATA is not set, a default temporary path will be used.
+        download_updates : boolean, optional
+            Check for and download any updated data files on the MADIS server
+            that are newer than what is currently stored locally or have not yet
+            been downloaded. Default: True. Downloads will be performed when
+            station and/or observation data are first requested. A download
+            of all necessary data files can be forced at any time by calling
+            download_local() on the ObsIO.
         data_version : str, optional
             MADIS dataset version (public, research, noaa-only, etc.) Some
             dataset versions are restricted and require a username and
@@ -366,6 +387,7 @@ class ObsIoFactory(object):
         """
 
         return MadisObsIO(local_data_path=local_data_path,
+                          download_updates=download_updates,
                           data_version=data_version,
                           username=username, password=password,
                           madis_datasets=madis_datasets,

@@ -45,17 +45,18 @@ class UshcnObsIO(ObsIO):
 
     _requires_local = True
 
-    def __init__(self, local_data_path=None, **kwargs):
+    def __init__(self, local_data_path=None, download_updates=True, **kwargs):
 
         super(UshcnObsIO, self).__init__(**kwargs)
 
         self.local_data_path = (local_data_path if local_data_path
                                 else LOCAL_DATA_PATH)
-
         self.path_ushcn_data = os.path.join(self.local_data_path, 'USHCN')
-
         if not os.path.isdir(self.path_ushcn_data):
             os.mkdir(self.path_ushcn_data)
+            
+        self.download_updates = download_updates
+        self._download_run = False
 
         self._a_obs_prefix_dirs = None
         self._a_obs_tarfiles = None
@@ -82,7 +83,11 @@ class UshcnObsIO(ObsIO):
         return self._a_obs_tarfiles
 
     def _read_stns(self):
+        
+        if self.download_updates and not self._download_run:
 
+            self.download_local()
+        
         stns = pd.read_fwf(os.path.join(self.path_ushcn_data,
                                         'ushcn-v2.5-stations.txt'),
                            colspecs=[(0, 11), (12, 20), (21, 30), (31, 37),
@@ -134,6 +139,8 @@ class UshcnObsIO(ObsIO):
 
             subprocess.call(['gunzip', '-f',
                              os.path.join(local_path, fname)])
+            
+        self._download_run = True
 
     def _parse_stn_obs(self, stn_id, elem):
 

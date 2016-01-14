@@ -100,7 +100,7 @@ class ObsIO(object):
         return self._requires_local
 
     def download_local(self):
-        """Download required data and store locally
+        """Force a download of required data and store locally
         
         Some ObsIO data sources are not web services and may require data to be
         downloaded and stored locally.
