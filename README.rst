@@ -59,7 +59,7 @@ time, but hourly and sub-hourly can easily be added.
 +---------------+-----------------------------------------+--------------------+
 | Provider Name | Currently Supported Elements            | Req. Local Storage |
 +===============+=========================================+====================+
-| ACIS_	        | tmin,tmax,prcp,tobs_tmin,tobs_tmax,	  |	No                 |
+| ACIS_	        | tmin,tmax,prcp,tobs_tmin,tobs_tmax,	  |	No             |
 |               | tobs_prcp                               |                    |
 +---------------+-----------------------------------------+--------------------+
 | GHCN-D_       | tmin,tmax,prcp,tobs_tmin,tobs_tmax,     | Yes                |
@@ -74,9 +74,9 @@ time, but hourly and sub-hourly can easily be added.
 +---------------+-----------------------------------------+--------------------+
 | NRCS_         | tmin,tmax,prcp,snwd,swe                 | No                 |
 +---------------+-----------------------------------------+--------------------+
-| USHCN_	    | \*\_mth_raw,\*\_mth_tob,\*\_mth_fls     | Yes                |
+| USHCN_	| \*\_mth_raw,\*\_mth_tob,\*\_mth_fls     | Yes                |
 +---------------+-----------------------------------------+--------------------+
-| WRCC_		    | tmin,tmax,tdew,tdewmin,tdewmax,vpd,     | No                 |
+| WRCC_		| tmin,tmax,tdew,tdewmin,tdewmax,vpd,     | No                 |
 |               | vpdmin,vpdmax,rh,rhmin,rhmax,prcp,srad, |                    |
 |               | wspd                                    |                    |
 +---------------+-----------------------------------------+--------------------+
