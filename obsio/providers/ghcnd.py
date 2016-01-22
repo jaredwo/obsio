@@ -2,9 +2,11 @@ from .. import LOCAL_DATA_PATH
 from ..util.misc import download_if_new_ftp
 from .generic import ObsIO
 from ftplib import FTP
+from multiprocessing.pool import Pool
 import numpy as np
 import os
 import pandas as pd
+import sys
 import tarfile
 
 _NETWORK_CODE_TO_SUBPROVIDER = {'0': '', '1': 'CoCoRaHS', 'C': 'COOP', 'E': 'ECA&D',
@@ -12,22 +14,125 @@ _NETWORK_CODE_TO_SUBPROVIDER = {'0': '', '1': 'CoCoRaHS', 'C': 'COOP', 'E': 'ECA
                                                   'Hydrological Center'),
                                 'R': 'RAWS', 'S': 'SNOTEL', 'W': 'WBAN'}
 _MISSING = -9999.0
+
+def _build_ghcnd_colspecs():
+
+    # ID,YEAR,MONTH,ELEMENT
+    colspecs = [(0, 11), (11, 15), (15, 17), (17, 21)]
+    colnames = ['station_id', 'year', 'month', 'elem']
+     
+    offset = 0
+    obs_column_size = 8
     
-def _convert_units(element, value):
+    for day in np.arange(1, 32):
+         
+        cs_value = (21 + offset, offset + 26)
+        cs_mflag = (26 + offset, offset + 27)
+        cs_qflag = (27 + offset, offset + 28)
+        cs_sflag = (28 + offset, offset + 29)
+        
+        colspecs.extend([cs_value, cs_mflag, cs_qflag, cs_sflag])
+        colnames.extend(['OBSV%.2d' % day, 'MFLG%.2d' % day,
+                         'QFLG%.2d' % day, 'SFLG%.2d' % day])
+        
+        offset += obs_column_size
+         
+    return colspecs, colnames
+    
+_COLSPECS_GHCND,_COLNAMES_GHCND = _build_ghcnd_colspecs()
+        
+_CONVERT_UNITS_FUNCS = {'tmin':lambda x: x / 10.0,  # tenths of degC to degC
+                        'tmax':lambda x: x / 10.0,  # tenths of degC to degC
+                        'prcp':lambda x: x / 10.0}  # tenths of mm to mm
+                            
+def _parse_ghcnd_dly(fpath, stn_id, elems, start_end=None):
+                        
+    obs = pd.read_fwf(fpath, colspecs=_COLSPECS_GHCND,
+                      names=_COLNAMES_GHCND, header=None, na_values=_MISSING)
 
-    if value == -9999:
-        # NO DATA, no conversion
-        return value
-    elif element == "prcp":
-        # tenths of mm to mm
-        return value / 10.0
-    elif element == "tmax" or element == "tmin":
-        # tenths of degrees C to degrees C
-        return value / 10.0
-    else:
-        raise ValueError("".join(["Unrecognized element type: ", element]))
+    obs.drop(obs.index[~obs.elem.str.lower().isin(elems)], axis=0,
+             inplace=True)
+    
+    # https://github.com/pydata/pandas/issues/8158
+    # http://stackoverflow.com/questions/19350806/
+    # how-to-convert-columns-into-one-datetime-column-in-pandas
+    y = np.array(obs.year - 1970, dtype='<M8[Y]')
+    m = np.array(obs.month - 1, dtype='<m8[M]')
+    obs['time'] = pd.to_datetime(y + m)
+    obs.drop(['year', 'month'], axis=1, inplace=True)
+    
+    obs.set_index(['time', 'station_id', 'elem'], inplace=True)
+    obs = obs.stack().reset_index()
+    
+    obs['elem'] = obs.elem + "_" + obs.level_3.str.slice(0, 4)
+    obs['time'] = obs.time + np.array(obs.level_3.str.slice(-2).astype(np.int),
+                                      dtype='<m8[D]')
+            
+    obs = obs.pivot(index='time', columns='elem', values=0)
+    obs.columns = obs.columns.str.lower()
+            
+    for elem in elems:
+         
+        cname_qflg = "%s_qflg" % elem
+                    
+        obs.rename(columns={"%s_obsv" % elem:elem}, inplace=True)
+        
+        try:
+            obs.loc[(~obs[cname_qflg].isnull()).values, elem] = np.nan
+        except KeyError:
+            # No quality flag columns because no observations were flagged
+            pass
+        
+        obs[elem] = _CONVERT_UNITS_FUNCS[elem](obs[elem].astype(np.float))
+    
+    obs.drop(obs.columns[~obs.columns.isin(elems)], axis=1,
+             inplace=True)
+    
+    obs.columns.name = None
+    
+    if start_end is not None:
+    
+        obs = obs.loc[start_end[0]:start_end[-1]]
+    
+    obs = obs.stack().reset_index()
+    obs.rename(columns={'level_1':'elem', 0:'obs_value'}, inplace=True)
+    
+    obs['station_id'] = stn_id
+    
+    return obs
 
-   
+def _parse_ghcnd_dly_star(args):
+
+    return _parse_ghcnd_dly(*args)
+
+def _parse_ghcnd_yrly(fpath, elems, stn_ids=None, start_end=None):
+    
+    print "Loading file %s..." % fpath
+    
+    a_df = pd.read_csv(fpath, header=None, usecols=[0, 1, 2, 7],
+                       names=['station_id', 'time', 'elem', 'tobs'],
+                       dtype={'station_id': np.str, 'time': np.str,
+                              'elem': np.str})
+    
+    a_df = a_df[~a_df.tobs.isnull()].copy()
+    a_df['elem'] = 'tobs_' + a_df.elem.str.lower()
+    a_df = a_df[a_df.elem.isin(elems)].copy()
+    a_df = a_df[a_df.station_id.isin(stn_ids)].copy()
+    a_df['time'] = pd.to_datetime(a_df['time'], format="%Y%m%d")
+
+    if start_end is not None:
+        mask_time = ((a_df['time'] >= start_end[0]) & 
+                     (a_df['time'] <= start_end[-1]))
+        a_df = a_df[mask_time].copy()
+
+    a_df = a_df.rename(columns={'tobs': 'obs_value'})
+        
+    return a_df
+    
+def _parse_ghcnd_yrly_star(args):
+    
+    return _parse_ghcnd_yrly(*args)
+
 class GhcndBulkObsIO(ObsIO):
 
     _avail_elems = ['tmin', 'tmax', 'prcp', 'tobs_tmin', 'tobs_tmax',
@@ -40,7 +145,8 @@ class GhcndBulkObsIO(ObsIO):
                             'prcp':lambda x: x / 10.0}  # tenths of mm to mm
                             
 
-    def __init__(self, local_data_path=None, download_updates=True, **kwargs):
+    def __init__(self, local_data_path=None, download_updates=True, nprocs=1,
+                 **kwargs):
 
         super(GhcndBulkObsIO, self).__init__(**kwargs)
 
@@ -53,6 +159,8 @@ class GhcndBulkObsIO(ObsIO):
         self.download_updates = download_updates
         self._download_run = False
         
+        self.nprocs = nprocs
+        
         # Split out normal elems and time-of-observation elements
         elems = np.array(self.elems)
         mask_tobs = np.char.startswith(elems, 'tobs')
@@ -60,11 +168,8 @@ class GhcndBulkObsIO(ObsIO):
         self._elems_tobs = elems[mask_tobs]  
         self._has_tobs = self._elems_tobs.size > 0
        
-        self._a_obs_tarfile = None
         self._a_df_tobs = None
-        self._a_colspecs = None
         
-
     @property
     def _df_tobs(self):
 
@@ -83,85 +188,53 @@ class GhcndBulkObsIO(ObsIO):
             else:
                 start_yr = np.min(yrs)
                 end_yr = np.max(yrs)
-
+                
             print ("GhcndObsIO: Loading time-of-observation data for years "
                    "%d to %d..." % (start_yr, end_yr))
 
             mask_yrs = np.logical_and(yrs >= start_yr, yrs <= end_yr)
             fnames = fnames[mask_yrs]
+            fpaths = [os.path.join(path_yrly, a_fname) for a_fname in fnames]
+            
+            nprocs = self.nprocs if len(fpaths) >= self.nprocs else len(fpaths)
+            
+            if self.has_start_end_dates:
+                start_end = (self.start_date, self.end_date)
+            
+            if nprocs > 1:
+                
+                # http://stackoverflow.com/questions/24171725/
+                # scikit-learn-multicore-attributeerror-stdin-instance-
+                # has-no-attribute-close
+                if not hasattr(sys.stdin, 'close'):
+                    def dummy_close():
+                        pass
+                    sys.stdin.close = dummy_close
+                
+                iter_files = [(a_fpath, self.elems, self.stns.station_id.values,
+                               start_end) for a_fpath in fpaths]
+                
+                pool = Pool(processes=nprocs)                
+                
+                tobs_all = pool.map(_parse_ghcnd_yrly_star, iter_files)
+                
+                pool.close()
+                pool.join()
+            
+            else:
 
-            tobs_all = []
-
-            for a_fname in fnames:
-
-                print "Loading file %s..." % a_fname
-
-                fpath = os.path.join(path_yrly, a_fname)
-
-                a_df = pd.read_csv(fpath, header=None, usecols=[0, 1, 2, 7],
-                                   names=[
-                                       'station_id', 'time', 'elem', 'tobs'],
-                                   dtype={'station_id': np.str, 'time': np.str,
-                                          'elem': np.str})
-                a_df = a_df[~a_df.tobs.isnull()].copy()
-                a_df['elem'] = 'tobs_' + a_df.elem.str.lower()
-                a_df = a_df[a_df.elem.isin(self.elems)].copy()
-                a_df = a_df[a_df.station_id.isin(self.stns.station_id)].copy()
-                a_df['time'] = pd.to_datetime(a_df['time'], format="%Y%m%d")
-
-                if self.has_start_end_dates:
-                    mask_time = ((a_df['time'] >= self.start_date) & 
-                                 (a_df['time'] <= self.end_date))
-                    a_df = a_df[mask_time].copy()
-
-                a_df = a_df.rename(columns={'tobs': 'obs_value'})
-
-                tobs_all.append(a_df)
+                tobs_all = []
+                
+                for a_fpath in fpaths:
+    
+                    a_df = _parse_ghcnd_yrly(a_fpath, self.elems,
+                                             self.stns.station_id.values, start_end)
+                    
+                    tobs_all.append(a_df)
 
             self._a_df_tobs = pd.concat(tobs_all, ignore_index=True)
 
         return self._a_df_tobs
-
-    @property
-    def _colspecs(self):
-        
-        if self._a_colspecs is None:
-        
-            # ID,YEAR,MONTH,ELEMENT
-            colspecs = [(0, 11), (11, 15), (15, 17), (17, 21)]
-            colnames = ['station_id', 'year', 'month', 'elem']
-            
-            offset = 0
-            obs_column_size = 8
-        
-            for day in np.arange(1, 32):
-                
-                cs_value = (21 + offset, offset + 26)
-                cs_mflag = (26 + offset, offset + 27)
-                cs_qflag = (27 + offset, offset + 28)
-                cs_sflag = (28 + offset, offset + 29)
-                
-                colspecs.extend([cs_value, cs_mflag, cs_qflag, cs_sflag])
-                colnames.extend(['OBSV%.2d' % day, 'MFLG%.2d' % day,
-                                 'QFLG%.2d' % day, 'SFLG%.2d' % day])
-                
-                offset += obs_column_size
-                
-            self._a_colspecs = colspecs, colnames
-        
-        return self._a_colspecs
-
-    @property
-    def _obs_tarfile(self):
-
-        if self._a_obs_tarfile is None:
-
-            print "GhcndObsIO: Initializing ghcnd_all.tar for reading..."
-            fpath = os.path.join(self.path_ghcnd_data, 'ghcnd_all.tar.gz')
-            self._a_obs_tarfile = tarfile.open(fpath)
-            self._a_obs_tarfile.getnames()
-
-        return self._a_obs_tarfile
 
     def _read_stns(self):
         
@@ -192,8 +265,6 @@ class GhcndBulkObsIO(ObsIO):
                          (stns.longitude <= self.bbox.east))
 
             stns = stns[mask_bnds].copy()
-
-        
 
         fpath_inv = os.path.join(self.path_ghcnd_data,
                                  'ghcnd-inventory.txt')
@@ -288,58 +359,6 @@ class GhcndBulkObsIO(ObsIO):
         
         self._download_run = True
         
-    def _parse_stn_obs(self, stn_id):
-        
-        fpath = os.path.join(self.path_ghcnd_data, 'ghcnd_all',
-                             '%s.dly' % stn_id)
-                
-        colspecs, colnames = self._colspecs
-        
-        obs = pd.read_fwf(fpath, colspecs=colspecs, names=colnames, header=None,
-                          na_values=_MISSING)
-
-        obs.drop(obs.index[~obs.elem.str.lower().isin(self._elems)], axis=0,
-                 inplace=True)
-        
-        # https://github.com/pydata/pandas/issues/8158
-        # http://stackoverflow.com/questions/19350806/
-        # how-to-convert-columns-into-one-datetime-column-in-pandas
-        y = np.array(obs.year - 1970, dtype='<M8[Y]')
-        m = np.array(obs.month - 1, dtype='<m8[M]')
-        obs['time'] = pd.to_datetime(y + m)
-        obs.drop(['year', 'month'], axis=1, inplace=True)
-        
-        obs.set_index(['time', 'station_id', 'elem'], inplace=True)
-        obs = obs.stack().reset_index()
-        
-        obs['elem'] = obs.elem + "_" + obs.level_3.str.slice(0, 4)
-        obs['time'] = obs.time + np.array(obs.level_3.str.slice(-2).astype(np.int),
-                                          dtype='<m8[D]')
-                
-        obs = obs.pivot(index='time', columns='elem', values=0)
-        obs.columns = obs.columns.str.lower()
-                
-        for elem in self._elems:
-             
-            cname_qflg = "%s_qflg" % elem
-                        
-            obs.rename(columns={"%s_obsv" % elem:elem}, inplace=True)
-            
-            try:
-                obs.loc[(~obs[cname_qflg].isnull()).values, elem] = np.nan
-            except KeyError:
-                # No quality flag columns because no observations were flagged
-                pass
-            
-            obs[elem] = self._convert_units_funcs[elem](obs[elem].astype(np.float))
-        
-        obs.drop(obs.columns[~obs.columns.isin(self._elems)], axis=1,
-                 inplace=True)
-        
-        obs.columns.name = None
-        
-        return obs
-
     def read_obs(self, stns_ids=None):
 
         # Saw extreme decreased performance due to garbage collection when
@@ -354,31 +373,51 @@ class GhcndBulkObsIO(ObsIO):
                 stns_obs = self.stns
             else:
                 stns_obs = self.stns.loc[stns_ids]
-
-            obs = []
-
-            for a_id in stns_obs.station_id:
-
-                obs_stn = self._parse_stn_obs(a_id)
-
-                if self.has_start_end_dates:
+            
+            nstns = len(stns_obs.station_id)
+            nprocs = self.nprocs if nstns >= self.nprocs else nstns
+            
+            if self.has_start_end_dates:
+                start_end = (self.start_date, self.end_date)
+            
+            if nprocs > 1:
+                
+                # http://stackoverflow.com/questions/24171725/
+                # scikit-learn-multicore-attributeerror-stdin-instance-
+                # has-no-attribute-close
+                if not hasattr(sys.stdin, 'close'):
+                    def dummy_close():
+                        pass
+                    sys.stdin.close = dummy_close
+                
+                iter_stns = [(os.path.join(self.path_ghcnd_data, 'ghcnd_all',
+                                           '%s.dly' % a_id), a_id, self._elems,
+                              start_end) for a_id in stns_obs.station_id]
+                
+                pool = Pool(processes=nprocs)                
+                obs = pool.map(_parse_ghcnd_dly_star, iter_stns)
+                
+                pool.close()
+                pool.join()
+            
+            else:
+            
+                obs = []
+    
+                for a_id in stns_obs.station_id:
                     
-                    obs_stn = obs_stn.loc[self.start_date:self.end_date]
-                
-                obs_stn = obs_stn.stack().reset_index()
-                obs_stn.rename(columns={'level_1':'elem', 0:'obs_value'},
-                               inplace=True)
-                
-                obs_stn['station_id'] = a_id
-
-                obs.append(obs_stn)
+                    fpath = os.path.join(self.path_ghcnd_data, 'ghcnd_all',
+                                         '%s.dly' % a_id)
+                                       
+                    obs_stn = _parse_ghcnd_dly(fpath, a_id, self._elems, start_end)
+                    obs.append(obs_stn)
 
             df_obs = pd.concat(obs, ignore_index=True)
 
             if self._has_tobs:
 
                 df_tobs = self._df_tobs[self._df_tobs.station_id.
-                                        isin(stns_obs.station_id)].copy()
+                                        isin(stns_obs.station_id)]
 
                 df_obs = pd.concat([df_obs, df_tobs], ignore_index=True)
 

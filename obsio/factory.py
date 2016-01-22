@@ -161,7 +161,7 @@ class ObsIoFactory(object):
                          end_date=self.end_date)
 
     def create_obsio_dly_ghcnd(self, local_data_path=None,
-                               download_updates=True):
+                               download_updates=True, nprocs=1):
         """Create ObsIO to access daily observations from NCEI's GHCN-D.
 
         NOAA's National Centers for Environmental Information (NCEI) Global
@@ -191,6 +191,8 @@ class ObsIoFactory(object):
             station and/or observation data are first requested. A download
             of all necessary data files can be forced at any time by calling
             download_local() on the ObsIO.
+        nprocs : int, optional
+            The number of processes to use for parsing GHCN-D files. Default: 1
             
         Returns
         ----------
@@ -198,7 +200,7 @@ class ObsIoFactory(object):
         """
 
         return GhcndBulkObsIO(local_data_path=local_data_path,
-                              download_updates=download_updates,
+                              download_updates=download_updates, nprocs=nprocs,
                               elems=self.elems, bbox=self.bbox,
                               start_date=self.start_date,
                               end_date=self.end_date)
