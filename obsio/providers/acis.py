@@ -205,7 +205,7 @@ class AcisObsIO(ObsIO):
 
         return df_stns
 
-    def read_obs(self, stns_ids=None):
+    def _read_obs(self, stns_ids=None):
 
         if stns_ids is None:
             stns_obs = self.stns

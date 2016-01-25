@@ -316,7 +316,7 @@ class IsdLiteObsIO(ObsIO):
 
         return stns
 
-    def read_obs(self, stns_ids=None):
+    def _read_obs(self, stns_ids=None):
 
         # Saw extreme decreased performance due to garbage collection when
         # pandas ran checks for a chained assignment. Turn off this check

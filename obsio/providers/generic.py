@@ -1,5 +1,6 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
+import xray
 
 
 class ObsIO(object):
@@ -109,8 +110,11 @@ class ObsIO(object):
 
     def _read_stns(self):
         raise NotImplementedError
-
-    def read_obs(self, stn_ids=None):
+    
+    def _read_obs(self, stn_ids):
+        raise NotImplementedError
+    
+    def read_obs(self, stn_ids=None, data_structure='stacked'):
         """Access observations for a set of stations.
 
         Parameters
@@ -120,14 +124,61 @@ class ObsIO(object):
             will return observations for all available stations according to
             the parameters specified for the ObsIO (elements, spatial bounding
             box, date range, etc.).
-
+        data_structure : str, optional
+            The data structure of the returned observations. One of: 'stacked',
+            'tidy', or 'array'. Default: 'stacked'. Data structure definitions:
+            - stacked (default) :
+                A pandas.DataFrame where observations are indexed by a 3 level
+                multiindex: station_id, elem, time. The "obs_value" column
+                contains the actual observation values.
+            - tidy : 
+                A pandas.DataFrame where observations are indexed by a 2 level
+                multiindex: station_id, time. Column(s) are values for
+                the requested elements. Meets the criteria of tidy data where
+                each column is a different variable and each row is a different
+                observation (http://www.jstatsoft.org/v59/i10/)
+            - array :
+                A xray.Dataset with separate 2D arrays of observations for each
+                element. The 2D observation arrays are of dimension: (time, station_id).
+                Corresponding station metadata are also included as arrays.
+                 
         Returns
         ----------
-        pandas.DataFrame
-            The observations as a pandas.DataFrame. Observations are indexed
-            by a 3 level multiindex: station_id, elem, time. The "obs_value"
-            column contains the actual observation values. Different ObsIOs
-            can return additional columns. 
+        pandas.DataFrame or xray.Dataset
+            The observations as a pandas.DataFrame or xray.Dataset dependent on
+            the requested data structure.
         """
+        
+        obs = self._read_obs(stn_ids)
 
-        raise NotImplementedError
+        if data_structure == 'stacked':
+            
+            #All providers already return data as stacked.
+            return obs
+        
+        elif data_structure == 'tidy':
+            
+            obs = obs.unstack(level=1)
+            obs.columns = [col[1] for col in obs.columns.values]
+            return obs
+        
+        elif data_structure == 'array':
+            
+            obs = obs.unstack(level=1)
+            obs.columns = [col[1] for col in obs.columns.values]
+            obs = xray.Dataset.from_dataframe(obs.swaplevel(0,1))
+            
+            if stn_ids is None:
+                stns = self.stns
+            else:
+                stns = self.stns.loc[stn_ids]
+            
+            #include station metadata
+            obs.merge(xray.Dataset.from_dataframe(stns), inplace=True)
+            
+            return obs
+        
+        else:
+            
+            raise ValueError("Unrecognized data format. Expected one of: "
+                             "'stacked', 'tidy', 'array'")
