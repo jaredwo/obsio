@@ -1,5 +1,5 @@
 from .. import LOCAL_DATA_PATH
-from ..util.misc import download_if_new_ftp
+from ..util.misc import download_if_new_ftp, open_remote_file
 from .generic import ObsIO
 from ftplib import FTP
 from multiprocessing.pool import Pool
@@ -105,6 +105,15 @@ def _parse_ghcnd_dly_star(args):
 
     return _parse_ghcnd_dly(*args)
 
+def _parse_ghcnd_dly_star_remote(args):
+    
+    args = list(args)
+    args[0] = open_remote_file('http://www1.ncdc.noaa.gov/'
+                               'pub/data/ghcn/daily/all/%s.dly'%args[1])
+    args = tuple(args)
+    
+    return _parse_ghcnd_dly(*args)
+
 def _parse_ghcnd_yrly(fpath, elems, stn_ids=None, start_end=None):
     
     print "Loading file %s..." % fpath
@@ -133,6 +142,56 @@ def _parse_ghcnd_yrly_star(args):
     
     return _parse_ghcnd_yrly(*args)
 
+def _parse_ghcnd_stnmeta(fpath_stns, fpath_stninv, elems, start_end=None, bbox=None):
+        
+    stns = pd.read_fwf(fpath_stns, colspecs=[(0, 11), (12, 20), (21, 30),
+                                             (31, 37), (38, 40), (41, 71),
+                                             (2, 3)], header=None,
+                       names=['station_id', 'latitude', 'longitude',
+                              'elevation', 'state', 'station_name',
+                              'network_code'])
+    stns['station_name'] = stns.station_name.apply(unicode, errors='ignore')
+    stns['provider'] = 'GHCND'
+    stns['sub_provider'] = (stns.network_code.apply(lambda x: _NETWORK_CODE_TO_SUBPROVIDER[x]))
+
+    if bbox is not None:
+
+        mask_bnds = ((stns.latitude >= bbox.south) & 
+                     (stns.latitude <= bbox.north) & 
+                     (stns.longitude >= bbox.west) & 
+                     (stns.longitude <= bbox.east))
+
+        stns = stns[mask_bnds].copy()
+
+    stn_inv = pd.read_fwf(fpath_stninv, colspecs=[(0, 11), (31, 35), (36, 40),
+                                          (41, 45)],
+                          header=None, names=['station_id', 'elem', 'start_year',
+                                              'end_year'])
+    stn_inv['elem'] = stn_inv.elem.str.lower()
+    stn_inv = stn_inv[stn_inv.elem.isin(elems)]
+    stn_inv = stn_inv.groupby('station_id').agg({'end_year': np.max,
+                                                 'start_year': np.min})
+    stn_inv = stn_inv.reset_index()
+
+    stns = pd.merge(stns, stn_inv, on='station_id')
+
+    if start_end is not None:
+
+        start_date,end_date = start_end
+
+        mask_por = (((start_date.year <= stns.start_year) & 
+                     (stns.start_year <= end_date.year)) | 
+                    ((stns.start_year <= start_date.year) & 
+                     (start_date.year <= stns.end_year)))
+
+        stns = stns[mask_por].copy()
+
+    stns = stns.reset_index(drop=True)
+    stns = stns.set_index('station_id', drop=False)
+
+    return stns
+
+
 class GhcndBulkObsIO(ObsIO):
 
     _avail_elems = ['tmin', 'tmax', 'prcp', 'tobs_tmin', 'tobs_tmax',
@@ -140,12 +199,8 @@ class GhcndBulkObsIO(ObsIO):
     
     _requires_local = True
 
-    _convert_units_funcs = {'tmin':lambda x: x / 10.0,  # tenths of degC to degC
-                            'tmax':lambda x: x / 10.0,  # tenths of degC to degC
-                            'prcp':lambda x: x / 10.0}  # tenths of mm to mm
-                            
 
-    def __init__(self, local_data_path=None, download_updates=True, nprocs=1,
+    def __init__(self, nprocs=1, local_data_path=None, download_updates=True,
                  **kwargs):
 
         super(GhcndBulkObsIO, self).__init__(**kwargs)
@@ -200,6 +255,8 @@ class GhcndBulkObsIO(ObsIO):
             
             if self.has_start_end_dates:
                 start_end = (self.start_date, self.end_date)
+            else:
+                start_end = False
             
             if nprocs > 1:
                 
@@ -241,60 +298,18 @@ class GhcndBulkObsIO(ObsIO):
         if self.download_updates and not self._download_run:
 
             self.download_local()
-
-        stns = pd.read_fwf(os.path.join(self.path_ghcnd_data,
-                                        'ghcnd-stations.txt'),
-                           colspecs=[(0, 11), (12, 20), (21, 30), (31, 37), (38, 40),
-                                     (41, 71), (2, 3)], header=None,
-                           names=['station_id', 'latitude', 'longitude',
-                                  'elevation', 'state', 'station_name',
-                                  'network_code'])
-        stns['station_name'] = stns.station_name.apply(
-            unicode, errors='ignore')
-        stns['provider'] = 'GHCND'
-        stns['sub_provider'] = (stns.
-                                network_code.
-                                apply(lambda x:
-                                      _NETWORK_CODE_TO_SUBPROVIDER[x]))
-
-        if self.bbox is not None:
-
-            mask_bnds = ((stns.latitude >= self.bbox.south) & 
-                         (stns.latitude <= self.bbox.north) & 
-                         (stns.longitude >= self.bbox.west) & 
-                         (stns.longitude <= self.bbox.east))
-
-            stns = stns[mask_bnds].copy()
-
-        fpath_inv = os.path.join(self.path_ghcnd_data,
-                                 'ghcnd-inventory.txt')
-
-        stn_inv = pd.read_fwf(fpath_inv,
-                              colspecs=[
-                                  (0, 11), (31, 35), (36, 40), (41, 45)],
-                              header=None, names=['station_id',
-                                                  'elem', 'start_year',
-                                                  'end_year'])
-        stn_inv['elem'] = stn_inv.elem.str.lower()
-        stn_inv = stn_inv[stn_inv.elem.isin(self.elems)]
-        stn_inv = stn_inv.groupby('station_id').agg({'end_year': np.max,
-                                                     'start_year': np.min})
-        stn_inv = stn_inv.reset_index()
-
-        stns = pd.merge(stns, stn_inv, on='station_id')
-
+            
+        fpath_stns = os.path.join(self.path_ghcnd_data, 'ghcnd-stations.txt')
+        fpath_stninv = os.path.join(self.path_ghcnd_data, 'ghcnd-inventory.txt')
+        
         if self.has_start_end_dates:
-
-            mask_por = (((self.start_date.year <= stns.start_year) & 
-                         (stns.start_year <= self.end_date.year)) | 
-                        ((stns.start_year <= self.start_date.year) & 
-                         (self.start_date.year <= stns.end_year)))
-
-            stns = stns[mask_por].copy()
-
-        stns = stns.reset_index(drop=True)
-        stns = stns.set_index('station_id', drop=False)
-
+            start_end = (self.start_date, self.end_date)
+        else:
+            start_end = None
+            
+        stns = _parse_ghcnd_stnmeta(fpath_stns, fpath_stninv, self.elems,
+                                    start_end, self.bbox)
+        
         return stns
 
     def download_local(self):
@@ -379,6 +394,8 @@ class GhcndBulkObsIO(ObsIO):
             
             if self.has_start_end_dates:
                 start_end = (self.start_date, self.end_date)
+            else:
+                start_end = None
             
             if nprocs > 1:
                 
@@ -429,3 +446,98 @@ class GhcndBulkObsIO(ObsIO):
         df_obs = df_obs.sortlevel(0, sort_remaining=True)
 
         return df_obs
+
+
+class GhcndObsIO(ObsIO):
+
+    _avail_elems = ['tmin', 'tmax', 'prcp']
+    
+    _requires_local = False
+
+
+    def __init__(self, nprocs=1, **kwargs):
+
+        super(GhcndObsIO, self).__init__(**kwargs)
+
+        self.nprocs = nprocs
+        
+    def _read_stns(self):
+        
+        fbuf_stns = open_remote_file('http://www1.ncdc.noaa.gov/'
+                                     'pub/data/ghcn/daily/ghcnd-stations.txt')
+        fbuf_stninv = open_remote_file('http://www1.ncdc.noaa.gov/'
+                                       'pub/data/ghcn/daily/ghcnd-inventory.txt')
+        
+        if self.has_start_end_dates:
+            start_end = (self.start_date, self.end_date)
+        else:
+            start_end = None
+            
+        stns = _parse_ghcnd_stnmeta(fbuf_stns, fbuf_stninv, self.elems,
+                                    start_end, self.bbox)
+        
+        return stns
+    
+    def read_obs(self, stns_ids=None):
+
+        # Saw extreme decreased performance due to garbage collection when
+        # pandas ran checks for a chained assignment. Turn off this check
+        # temporarily.
+        opt_val = pd.get_option('mode.chained_assignment')
+        pd.set_option('mode.chained_assignment', None)
+
+        try:
+
+            if stns_ids is None:
+                stns_obs = self.stns
+            else:
+                stns_obs = self.stns.loc[stns_ids]
+            
+            nstns = len(stns_obs.station_id)
+            nprocs = self.nprocs if nstns >= self.nprocs else nstns
+            
+            if self.has_start_end_dates:
+                start_end = (self.start_date, self.end_date)
+            
+            if nprocs > 1:
+                
+                # http://stackoverflow.com/questions/24171725/
+                # scikit-learn-multicore-attributeerror-stdin-instance-
+                # has-no-attribute-close
+                if not hasattr(sys.stdin, 'close'):
+                    def dummy_close():
+                        pass
+                    sys.stdin.close = dummy_close
+                
+                iter_stns = [(None, a_id, self.elems, start_end)
+                             for a_id in stns_obs.station_id]
+                
+                pool = Pool(processes=nprocs)                
+                obs = pool.map(_parse_ghcnd_dly_star_remote, iter_stns)
+                
+                pool.close()
+                pool.join()
+            
+            else:
+            
+                obs = []
+    
+                for a_id in stns_obs.station_id:
+                    
+                    abuf = open_remote_file('http://www1.ncdc.noaa.gov/'
+                                            'pub/data/ghcn/daily/all/%s.dly'%a_id)
+                                       
+                    obs_stn = _parse_ghcnd_dly(abuf, a_id, self.elems, start_end)
+                    obs.append(obs_stn)
+
+            df_obs = pd.concat(obs, ignore_index=True)
+
+        finally:
+
+            pd.set_option('mode.chained_assignment', opt_val)
+
+        df_obs = df_obs.set_index(['station_id', 'elem', 'time'])
+        df_obs = df_obs.sortlevel(0, sort_remaining=True)
+
+        return df_obs
+

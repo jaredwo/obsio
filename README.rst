@@ -62,7 +62,7 @@ time, but hourly and sub-hourly can easily be added.
 | ACIS_	        | tmin,tmax,prcp,tobs_tmin,tobs_tmax,	  |	No             |
 |               | tobs_prcp                               |                    |
 +---------------+-----------------------------------------+--------------------+
-| GHCN-D_       | tmin,tmax,prcp,tobs_tmin,tobs_tmax,     | Yes                |
+| GHCN-D_       | tmin,tmax,prcp,tobs_tmin,tobs_tmax,     | Optional           |
 |               | tobs_prcp                               |                    |
 +---------------+-----------------------------------------+--------------------+
 | ISDLite_      | tmin,tmax,tdew,tdewmin,tdewmax,vpd,     | No                 |
@@ -186,8 +186,9 @@ obsio will default to a standard temporary directory. Example:
 ::
 
 	# Example code for accessing GHCN-D observations in the Pacific
-	# Northwest for January 2015. GHCN-D is a data provider that requires
-	# local storage.
+	# Northwest for January 2015. GHCN-D is a data provider that
+	# has an option to download and store observations locally for more
+	# efficient bulk parsing and access.
 	
 	import obsio
 	import pandas as pd
@@ -205,11 +206,11 @@ obsio will default to a standard temporary directory. Example:
 	# Initialize factory with specified parameters
 	obsiof = obsio.ObsIoFactory(elems, bbox, start_date, end_date)
 	
-	# Create ObsIO object for accessing GHCN-D observations. A local data path
-	# can be specified in the create_obsio_dly_ghcnd() call. If not specified,
-	# the 'OBSIO_DATA' environmental variable will be checked. If 'OBSIO_DATA'
-	# doesn't exist, a default temporary directory will be used.
-	ghcnd_io = obsiof.create_obsio_dly_ghcnd()
+	# Create ObsIO object for accessing GHCN-D observations in bulk mode.
+	# A local data path can be specified in the create_obsio_dly_ghcnd() call.
+	# If not specified, the 'OBSIO_DATA' environmental variable will be checked.
+	# If 'OBSIO_DATA' doesn't exist, a default temporary directory will be used.
+	ghcnd_io = obsiof.create_obsio_dly_ghcnd(bulk=True)
 			
 	# Access observations for first 10 stations using the read_obs() method.
 	# First call to read_obs() will take several minutes due to initial data

@@ -1,5 +1,5 @@
 from .providers.acis import AcisObsIO
-from .providers.ghcnd import GhcndBulkObsIO
+from .providers.ghcnd import GhcndBulkObsIO, GhcndObsIO
 from .providers.isd import IsdLiteObsIO
 from .providers.madis import MadisObsIO
 from .providers.nrcs import NrcsObsIO
@@ -160,50 +160,65 @@ class ObsIoFactory(object):
                          start_date=self.start_date,
                          end_date=self.end_date)
 
-    def create_obsio_dly_ghcnd(self, local_data_path=None,
-                               download_updates=True, nprocs=1):
+    def create_obsio_dly_ghcnd(self, nprocs=1, bulk=False, local_data_path=None,
+                               download_updates=True):
         """Create ObsIO to access daily observations from NCEI's GHCN-D.
 
         NOAA's National Centers for Environmental Information (NCEI) Global
         Historical Climatology Network Daily (GHCN-D) is an integrated
         database of daily climate summaries from land surface stations across
-        the globe. This ObsIO accesses GHCN-D observations via the GHCN-D FTP
-        site: ftp://ftp.ncdc.noaa.gov/pub/data/ghcn/daily/.
+        the globe: https://www.ncdc.noaa.gov/oa/climate/ghcn-daily/
+        This ObsIO can access GHCN-D observations directly or in a
+        bulk mode that first downloads the entire GHCN-D archive to local disk.
         Currently available elements:
         - 'tmin' : daily minimum temperature (C)
         - 'tmax' : daily maximum temperature (C)
         - 'prcp' : daily total precipitation (mm)
-        - 'tobs_tmin' : time-of-observation for daily tmin (local hr)
-        - 'tobs_tmax' : time-of-observation for daily tmax (local hr)
-        - 'tobs_prcp' : time-of-observation for daily prcp (local hr)
+        - 'tobs_tmin' : time-of-observation for daily tmin (local hr; bulk access only)
+        - 'tobs_tmax' : time-of-observation for daily tmax (local hr; bulk access only)
+        - 'tobs_prcp' : time-of-observation for daily prcp (local hr; bulk access only)
 
         Parameters
         ----------
+        nprocs : int, optional
+            The number of processes to use for parsing GHCN-D files. Default: 1
+        bulk : boolean, optional
+            Create a bulk version of the ObsIO that downloads the entire GHCN-D
+            archive to local disk before parsing. Use the bulk version if you
+            need to process observations from many stations at one time and/or
+            require time-of-observation elements. Default: False
         local_data_path : str, optional
-            The local path for downloading and storing GHCN-D data from the
-            FTP site. If not specified, will use and create a GHCND directory
+            The local path to download and store GHCN-D data if parsing in bulk.
+            If not specified and bulk is True, will use and create a GHCND directory
             in the path specified by the OBSIO_DATA environmental variable. If
             OBSIO_DATA is not set, a default temporary path will be used.
         download_updates : boolean, optional
-            Check for and download any updated data files on the GHCN-D FTP site
-            that are newer than what is currently stored locally or have not yet
-            been downloaded. Default: True. Downloads will be performed when 
-            station and/or observation data are first requested. A download
-            of all necessary data files can be forced at any time by calling
-            download_local() on the ObsIO.
-        nprocs : int, optional
-            The number of processes to use for parsing GHCN-D files. Default: 1
+            If downloading in bulk, check for and download any updated data
+            files on the GHCN-D site that are newer than what is currently
+            stored locally or have not yet been downloaded. Default: True.
+            Downloads will be performed when station and/or observation data
+            are first requested. A download of all necessary data files can be
+            forced at any time by calling download_local() on the ObsIO.
+
             
         Returns
         ----------
         obsio.ObsIO
         """
+        
+        if bulk:
+        
+            return GhcndBulkObsIO(nprocs=nprocs, local_data_path=local_data_path,
+                                  download_updates=download_updates,
+                                  elems=self.elems, bbox=self.bbox,
+                                  start_date=self.start_date,
+                                  end_date=self.end_date)
+        else:
+            
+            return GhcndObsIO(nprocs=nprocs, elems=self.elems, bbox=self.bbox,
+                              start_date=self.start_date, end_date=self.end_date)
+            
 
-        return GhcndBulkObsIO(local_data_path=local_data_path,
-                              download_updates=download_updates, nprocs=nprocs,
-                              elems=self.elems, bbox=self.bbox,
-                              start_date=self.start_date,
-                              end_date=self.end_date)
 
     def create_obsio_mthly_ushcn(self, local_data_path=None,
                                  download_updates=True):
