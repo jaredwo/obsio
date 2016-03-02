@@ -41,8 +41,6 @@ def _get_stnids(stns):
 
     stn_ids = pd.Series(stn_ids, index=stns.index, dtype=np.object)
 
-    null_ids = True
-
     cnames_sids = stns.columns[np.char.
                                startswith(stns.columns.values.astype(np.str),
                                           prefix='sid')].values.astype(np.str)
@@ -58,11 +56,7 @@ def _get_stnids(stns):
 
         if stn_ids.isnull().sum() == 0:
 
-            null_ids = False
             break
-
-    if null_ids:
-        raise ValueError("Stations with no valid station id.")
 
     return stn_ids
 
@@ -195,6 +189,12 @@ class AcisObsIO(ObsIO):
                 return '_'
 
         stnids = _get_stnids(df_stns)
+        
+        # Remove stations for which a provider station id could not be determined
+        mask_valid = ~stnids.isnull()
+        stnids = stnids[mask_valid].copy()
+        df_stns = df_stns[mask_valid].copy()
+        
         sid_codes = (stnids.str.split(expand=True)[1]).astype(np.int)
         sub_provid = (sid_codes.apply(get_sid_name).
                       str.split('_', expand=True)[1].str.upper())
