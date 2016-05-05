@@ -40,7 +40,7 @@ def _build_ghcnd_colspecs():
          
     return colspecs, colnames
     
-_COLSPECS_GHCND,_COLNAMES_GHCND = _build_ghcnd_colspecs()
+_COLSPECS_GHCND, _COLNAMES_GHCND = _build_ghcnd_colspecs()
         
 _CONVERT_UNITS_FUNCS = {'tmin':lambda x: x / 10.0,  # tenths of degC to degC
                         'tmax':lambda x: x / 10.0,  # tenths of degC to degC
@@ -67,34 +67,36 @@ def _parse_ghcnd_dly(fpath, stn_id, elems, start_end=None):
     
     obs['elem'] = obs.elem + "_" + obs.level_3.str.slice(0, 4)
     obs['time'] = obs.time + (np.array(obs.level_3.str.slice(-2).astype(np.int),
-                                      dtype='<m8[D]')-1)
+                                      dtype='<m8[D]') - 1)
             
     obs = obs.pivot(index='time', columns='elem', values=0)
     obs.columns = obs.columns.str.lower()
             
     for elem in elems:
         
+        cname_elem = "%s_obsv" % elem
+                
         try:
             
-            obs_elem = obs["%s_obsv" % elem].astype(np.float)
-        
+            obs[cname_elem] = obs[cname_elem].astype(np.float)
+
         except KeyError:
             # no observations for element
             continue
+        
+        obs.rename(columns={cname_elem:elem}, inplace=True)
          
         cname_qflg = "%s_qflg" % elem
                     
-        obs.rename(columns={"%s_obsv" % elem:elem}, inplace=True)
-        
         try:
-            
+            # Set QA flagged observations to null
             obs.loc[(~obs[cname_qflg].isnull()).values, elem] = np.nan
         
         except KeyError:
             # No quality flag columns because no observations were flagged
             pass
         
-        obs[elem] = _CONVERT_UNITS_FUNCS[elem](obs_elem)
+        obs[elem] = _CONVERT_UNITS_FUNCS[elem](obs[elem])
     
     obs.drop(obs.columns[~obs.columns.isin(elems)], axis=1,
              inplace=True)
@@ -120,7 +122,7 @@ def _parse_ghcnd_dly_star_remote(args):
     
     args = list(args)
     args[0] = open_remote_file('http://www1.ncdc.noaa.gov/'
-                               'pub/data/ghcn/daily/all/%s.dly'%args[1])
+                               'pub/data/ghcn/daily/all/%s.dly' % args[1])
     args = tuple(args)
     
     return _parse_ghcnd_dly(*args)
@@ -132,21 +134,21 @@ def _parse_ghcnd_yrly(fpath, elems):
         chk.dropna(subset=['tobs'], inplace=True)
             
         chk['elem'] = 'tobs_' + chk.elem.str.lower()
-        chk['elem'] = pd.Categorical(chk['elem'],categories=elems)
+        chk['elem'] = pd.Categorical(chk['elem'], categories=elems)
         chk.dropna(subset=['elem'], inplace=True)
                 
         chk['time'] = pd.to_datetime(chk['time'], format="%Y%m%d")
         
-        chk.rename(columns={'tobs': 'obs_value'},inplace=True)
+        chk.rename(columns={'tobs': 'obs_value'}, inplace=True)
         chk.reset_index(drop=True, inplace=True)
 
         return chk
         
     print "Loading file %s..." % fpath
     
-    reader = pd.read_csv(fpath, header=None, usecols=[0, 1, 2, 7],sep=',',
+    reader = pd.read_csv(fpath, header=None, usecols=[0, 1, 2, 7], sep=',',
                          names=['station_id', 'time', 'elem', 'tobs'],
-                         compression='gzip',dtype={'tobs': np.float32},
+                         compression='gzip', dtype={'tobs': np.float32},
                          chunksize=1000000)
     
     obs = pd.concat([parse_chunk(chk) for chk in reader], ignore_index=True)
@@ -161,7 +163,7 @@ def _parse_ghcnd_stnmeta(fpath_stns, fpath_stninv, elems, start_end=None, bbox=N
         
     stns = pd.read_fwf(fpath_stns, colspecs=[(0, 11), (12, 20), (21, 30),
                                              (31, 37), (38, 40), (41, 71),
-                                             (2, 3),(76,79)], header=None,
+                                             (2, 3), (76, 79)], header=None,
                        names=['station_id', 'latitude', 'longitude',
                               'elevation', 'state', 'station_name',
                               'network_code', 'hcn_crn_flag'])
@@ -192,7 +194,7 @@ def _parse_ghcnd_stnmeta(fpath_stns, fpath_stninv, elems, start_end=None, bbox=N
 
     if start_end is not None:
 
-        start_date,end_date = start_end
+        start_date, end_date = start_end
 
         mask_por = (((start_date.year <= stns.start_year) & 
                      (stns.start_year <= end_date.year)) | 
@@ -211,24 +213,24 @@ def _build_tobs_hdfs(path_out, fpaths_yrly, elems, nprocs=1):
     fpaths_yrly = np.array(fpaths_yrly)
     nprocs = nprocs if fpaths_yrly.size >= nprocs else fpaths_yrly.size
         
-    stn_nums = pd.DataFrame([(np.nan,np.nan)],columns=['station_id','station_num'])
+    stn_nums = pd.DataFrame([(np.nan, np.nan)], columns=['station_id', 'station_num'])
     num_inc = 0 
     
     def write_data(df_tobs, num_inc, stn_nums):
     
-        hdfs = {elem:pd.HDFStore(os.path.join(path_out,'%s.hdf'%elem), 'a')
+        hdfs = {elem:pd.HDFStore(os.path.join(path_out, '%s.hdf' % elem), 'a')
                 for elem in elems}
                 
-        df_tobs.set_index('station_id',inplace=True)
+        df_tobs.set_index('station_id', inplace=True)
         df_tobs['obs_value'] = df_tobs.obs_value.astype(np.int16)
         
-        uids = pd.DataFrame(df_tobs.index.unique(),columns=['station_id'])
-        uids = uids.merge(stn_nums, how='left',on='station_id')
+        uids = pd.DataFrame(df_tobs.index.unique(), columns=['station_id'])
+        uids = uids.merge(stn_nums, how='left', on='station_id')
         mask_nonum = uids.station_num.isnull()
         
         if mask_nonum.any():
             
-            nums = np.arange(num_inc, (num_inc+mask_nonum.sum()))
+            nums = np.arange(num_inc, (num_inc + mask_nonum.sum()))
             uids.loc[mask_nonum, 'station_num'] = nums
             num_inc = nums[-1] + 1
             stn_nums = pd.concat([stn_nums, uids[mask_nonum]], ignore_index=True)
@@ -242,9 +244,9 @@ def _build_tobs_hdfs(path_out, fpaths_yrly, elems, nprocs=1):
         for elem in elems:
             
             try:
-                grp = grped.get_group(elem)[['time','obs_value']].copy()
+                grp = grped.get_group(elem)[['time', 'obs_value']].copy()
             except KeyError:
-                #no observation for element
+                # no observation for element
                 continue
             
             hdfs[elem].append('df_tobs', grp, data_columns=['time'])
@@ -254,8 +256,8 @@ def _build_tobs_hdfs(path_out, fpaths_yrly, elems, nprocs=1):
         
         return num_inc, stn_nums
     
-    #Initialize output hdfs
-    hdfs = [pd.HDFStore(os.path.join(path_out,'%s.hdf'%elem), 'w')
+    # Initialize output hdfs
+    hdfs = [pd.HDFStore(os.path.join(path_out, '%s.hdf' % elem), 'w')
             for elem in elems]
     
     for store in hdfs:
@@ -273,10 +275,10 @@ def _build_tobs_hdfs(path_out, fpaths_yrly, elems, nprocs=1):
         
         for i in np.arange(fpaths_yrly.size, step=nprocs):
             
-            fpaths = fpaths_yrly[i:(i+nprocs)]
+            fpaths = fpaths_yrly[i:(i + nprocs)]
             gc.collect()
             pool = Pool(processes=nprocs)                
-            iter_files = [(fpath,elems) for fpath in fpaths]
+            iter_files = [(fpath, elems) for fpath in fpaths]
             ls_tobs = pool.map(_parse_ghcnd_yrly_star, iter_files, chunksize=1)
             pool.close()
             pool.join()
@@ -297,8 +299,8 @@ def _build_tobs_hdfs(path_out, fpaths_yrly, elems, nprocs=1):
             num_inc, stn_nums = write_data(df_tobs, num_inc, stn_nums)
     
     stn_nums = stn_nums.dropna()
-    store_stnnums = pd.HDFStore(os.path.join(path_out,'stn_nums.hdf'), 'w')
-    store_stnnums.put('df_stnnums',stn_nums)
+    store_stnnums = pd.HDFStore(os.path.join(path_out, 'stn_nums.hdf'), 'w')
+    store_stnnums.put('df_stnnums', stn_nums)
     store_stnnums.close()
     
 class GhcndBulkObsIO(ObsIO):
@@ -307,6 +309,7 @@ class GhcndBulkObsIO(ObsIO):
                     'tobs_prcp']
     
     _requires_local = True
+    name = 'GHCND'
 
 
     def __init__(self, nprocs=1, local_data_path=None, download_updates=True,
@@ -520,41 +523,39 @@ class GhcndBulkObsIO(ObsIO):
                 if not stnnums.empty:
                     
                     stnnums = stnnums.reset_index(drop=True).set_index('station_num')
-                    
-                    if self.has_start_end_dates:
                         
-                        select_str = ("index = a_num & "
-                                      "time >= self.start_date & "
-                                      "time <= self.end_date")
-                    
-                    else:
-                        
-                        select_str = "index = a_num"
+                    select_str = "index = a_num"
                                     
                     df_tobs = []
                     path_yrly = os.path.join(self.path_ghcnd_data, 'by_year')
                     
                     for elem in self._elems_tobs:
                         
-                        store = pd.HDFStore(os.path.join(path_yrly, '%s.hdf'%elem))
+                        store = pd.HDFStore(os.path.join(path_yrly, '%s.hdf' % elem))
                         
                         # Perform separate read for each station.
                         # Had this in a single call using "index in stnnums"
                         # but memory usage was too high
                     
                         for a_num in stnnums.index:
-        
+                            
                             elem_tobs = store.select('df_tobs', select_str).reset_index()
                             elem_tobs['elem'] = elem
                             elem_tobs['station_id'] = stnnums.station_id.loc[a_num]
                                                         
-                            df_tobs.append(elem_tobs[['time','elem','obs_value',
+                            df_tobs.append(elem_tobs[['time', 'elem', 'obs_value',
                                                       'station_id']])
                         store.close()
                         del store
                         gc.collect()
-                        
+                    
                     df_tobs = pd.concat(df_tobs, ignore_index=True)
+                    
+                    if self.has_start_end_dates:
+                        
+                        df_tobs = df_tobs[(df_tobs.time >= self.start_date) & 
+                                          (df_tobs.time <= self.end_date)]
+                    
                     df_obs = pd.concat([df_obs, df_tobs], ignore_index=True)
 
         finally:
@@ -569,9 +570,8 @@ class GhcndBulkObsIO(ObsIO):
 class GhcndObsIO(ObsIO):
 
     _avail_elems = ['tmin', 'tmax', 'prcp']
-    
     _requires_local = False
-
+    name = 'GHCND'
 
     def __init__(self, nprocs=1, **kwargs):
 
@@ -645,7 +645,7 @@ class GhcndObsIO(ObsIO):
                 for a_id in stns_obs.station_id:
                     
                     abuf = open_remote_file('http://www1.ncdc.noaa.gov/'
-                                            'pub/data/ghcn/daily/all/%s.dly'%a_id)
+                                            'pub/data/ghcn/daily/all/%s.dly' % a_id)
                                        
                     obs_stn = _parse_ghcnd_dly(abuf, a_id, self.elems, start_end)
                     obs.append(obs_stn)
