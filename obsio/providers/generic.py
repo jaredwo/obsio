@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 import xray
+from ..util.misc import StatusCheck
+import netCDF4 as nc
 
 
 class ObsIO(object):
@@ -182,3 +184,184 @@ class ObsIO(object):
             
             raise ValueError("Unrecognized data format. Expected one of: "
                              "'stacked', 'tidy', 'array'")
+    
+    def to_hdf(self, fpath, stn_ids, chk_rw, verbose=True, **kwargs):
+        """Write observations to a PyTables HDF5 file
+        
+        Uses pandas.HDFStore
+        
+        Parameters
+        ----------
+        fpath : str
+            File path for output HDF5 file
+        stn_ids : list of str
+            The station ids for which to write observations
+        chk_rw : int
+            The chunk size in number of stations for which to read observations
+            into memory and output to the HDF5 file. For example, a chunk size
+            of 50 will read and write observations from 50 stations at a time.
+        verbose : boolean, optional
+            Print out progress messages. Default: True.
+        **kwargs
+            Additional keyword arguments for initializing pandas.HDFStore
+            (e.g. complevel=5, complib='zlib')
+        """
+        
+        store = pd.HDFStore(fpath, 'w', **kwargs) #complevel=5, complib='zlib')
+        stns = self.stns.loc[stn_ids]
+        # Make sure all object columns are str and not unicode
+        stns.loc[:, stns.dtypes == object] = stns.loc[:, stns.dtypes == object].astype(np.str)
+        stns.index = stns.index.astype(np.str)
+        store.append('stns', stns)
+        store.get_storer('stns').attrs.elems = self.elems
+        store.get_storer('stns').attrs.start_date = self.start_date
+        store.get_storer('stns').attrs.end_date = self.end_date
+        store.get_storer('stns').attrs.bbox = self.bbox
+        store.get_storer('stns').attrs.name = self.name
+        
+        first_append = True
+        
+        if verbose:
+            schk = StatusCheck(len(stn_ids),chk_rw)
+        
+        for i in np.arange(len(stn_ids),step=chk_rw):
+                        
+            obs = self.read_obs(stn_ids[i:(i+chk_rw)], 'tidy')
+            obs = obs.reset_index()
+            # Make sure all object columns are str and not unicode
+            obs.loc[:, obs.dtypes == object] = obs.loc[:, obs.dtypes == object].astype(np.str)
+            
+            obs = obs.set_index('station_id')
+            obs = obs.reindex(columns=['time']+list(self.elems))
+            
+            if first_append:
+                
+                erows = np.int(np.round(len(obs)*
+                                        (len(stn_ids)/np.float(chk_rw))))
+                store.append('obs', obs, data_columns=['time'], index=False,
+                             expectedrows=erows)
+                first_append = False
+                
+            else:
+               
+                store.append('obs', obs, data_columns=['time'], index=False)
+            
+            if verbose:
+                schk.increment(chk_rw)
+        
+        if verbose:
+            print "Creating index..."          
+    
+        store.create_table_index('obs', optlevel=9, kind='full')
+        store.create_table_index('obs', columns=['time'], optlevel=9, kind='full')
+        
+        store.close()
+        
+    def to_netcdf(self, fpath, stn_ids, start_date, end_date, chk_rw,
+                  verbose=True):
+        """Write observations to a netCDF file
+        
+        Creates a 2D netCDF observation variable for each element. The 
+        first axis is time and the second axis is station id. 
+        
+        Parameters
+        ----------
+        fpath : str
+            File path for output netCDF file
+        stn_ids : list of str
+            The station ids for which to write observations
+        start_date : pandas.Timestamp
+            Start date of desired date range for output observations. Used in
+            combination with end_date to set the size of the time dimension.
+        end_date : pandas.Timestamp, optional
+            End date of desired date range for output observations. Used in
+            combination with start_date to set the size of the time dimension.
+        chk_rw : int
+            The chunk size in number of stations for which to read observations
+            into memory and output to the netCDF file. For example, a chunk size
+            of 50 will read and write observations from 50 stations at a time.
+        verbose : boolean, optional
+            Print out progress messages. Default: True.
+        """
+        
+        stns = self.stns.loc[stn_ids].copy()
+        
+        dates = pd.date_range(start_date, end_date, freq='D')
+        
+        # Create output netcdf file
+        ds_out = nc.Dataset(fpath, 'w')
+         
+        # Create station id dimension and add station metadata
+        ds_out.createDimension('station_id', len(stn_ids))
+         
+        for acol in stns.columns:
+        
+            adtype = np.str if stns[acol].dtype == np.dtype('O') else stns[acol].dtype
+            avar = ds_out.createVariable(acol, adtype, ('station_id',))
+             
+            if adtype == np.str:
+                avar[:] = stns[acol].astype(np.str).values
+            else:
+                avar[:] = stns[acol].values
+        
+        ds_out.sync()   
+                
+        # Add station index number column    
+        stns['station_num'] = np.arange(len(stns))
+         
+        ds_out.createDimension('time', dates.size)
+         
+        # Create time dimension and variable
+        times = ds_out.createVariable('time', 'f8', ('time',), fill_value=False)
+        times.long_name = "time"
+        times.units = "days since %d-%02d-%02d 0:0:0"%(dates[0].year, dates[0].month,
+                                                       dates[0].day)
+        times.standard_name = "time"
+        times.calendar = "standard"
+        times[:] = nc.date2num(dates.to_pydatetime(), times.units)
+         
+        # Create main element variables. Optimize chunkshape for single time series slices
+        elem_vars = {}
+        for a_elem in self.elems:
+             
+            elem_vars[a_elem] = ds_out.createVariable(a_elem, 'f8',
+                                                      ('time', 'station_id'),
+                                                      chunksizes=(dates.size,1),
+                                                      fill_value=nc.default_fillvals['f8'],
+                                                      zlib=True)
+            elem_vars[a_elem].missing_value = nc.default_fillvals['f8']
+        
+        ds_out.sync()
+        
+        if verbose:
+            schk = StatusCheck(len(stn_ids),chk_rw)
+        
+        for i in np.arange(len(stns),step=chk_rw):
+        
+            a_stns = stns.iloc[i:(i+chk_rw)]
+            
+            obs = self.read_obs(a_stns.station_id, 'array')            
+            obs = obs.reindex(time=dates)
+            
+            a_stns_num = stns.loc[obs['station_id'].values, 'station_num'].values
+            num_sort = np.argsort(a_stns_num)
+            a_stns_num = a_stns_num[num_sort]
+            
+            for a_elem in self.elems:
+     
+                try:
+                    vals = np.ma.filled(np.ma.masked_invalid(obs[a_elem].values),
+                                        nc.default_fillvals['f8'])
+                except KeyError:
+                    continue
+                
+                vals = np.take(vals, num_sort, axis=1)
+                elem_vars[a_elem][:,a_stns_num] = vals
+                
+            ds_out.sync()
+            
+            if verbose:
+                schk.increment(chk_rw)
+        
+        ds_out.close()
+        
