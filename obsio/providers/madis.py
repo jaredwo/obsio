@@ -1406,6 +1406,7 @@ class MadisObsIO(ObsIO):
                     'vpdmin', 'vpdmax', 'rh', 'rhmin', 'rhmax', 'srad', 'prcp',
                     'wspd']
     _requires_local = True
+    name = 'MADIS'
 
     _MIN_HRLY_FOR_DLY_DFLT = {'tmin': 20, 'tmax': 20, 'tdew': 4, 'tdewmin': 18,
                               'tdewmax': 18, 'vpd':18, 'vpdmin':18, 'vpdmax':18,

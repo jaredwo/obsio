@@ -206,6 +206,8 @@ class IsdLiteObsIO(ObsIO):
     _avail_elems = ['tmin', 'tmax', 'tdew', 'tdewmin', 'tdewmax', 'vpd',
                     'vpdmin', 'vpdmax', 'rh', 'rhmin', 'rhmax','prcp']
     
+    name = 'ISDLITE'
+    
     _elem_to_cnt_vname =  {'tmin':'tair_count','tmax':'tair_count','tdew':'tdew_count',
                            'tdewmin':'tdew_count', 'tdewmax':'tdew_count',
                            'vpd':'vpd_count','vpdmin':'vpd_count','vpdmax':'vpd_count',

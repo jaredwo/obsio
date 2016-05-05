@@ -66,6 +66,7 @@ class AcisObsIO(ObsIO):
     _avail_elems = ['tmin', 'tmax', 'prcp', 'tobs_tmin', 'tobs_tmax',
                     'tobs_prcp']
     _requires_local = False
+    name = 'ACIS'
 
     def __init__(self, **kwargs):
 

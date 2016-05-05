@@ -384,8 +384,9 @@ class _NrcsHourly():
 
     def read_obs(self, start_date, end_date, stns):
 
-        begin = start_date.strftime("%Y-%m-%d")
-        end = (end_date + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+        begin = "%d-%.2d-%.2d"%(start_date.year, start_date.month, start_date.day)
+        end = (end_date + pd.Timedelta(days=1))
+        end = "%d-%.2d-%.2d"%(end.year, end.month, end.day)
 
         obs_all = []
 
@@ -471,9 +472,10 @@ class _NrcsDaily():
 
     def read_obs(self, start_date, end_date, stns):
 
-        begin = start_date.strftime("%Y-%m-%d")
-        end = (end_date + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
-
+        begin = "%d-%.2d-%.2d"%(start_date.year, start_date.month, start_date.day)
+        end = (end_date + pd.Timedelta(days=1))
+        end = "%d-%.2d-%.2d"%(end.year, end.month, end.day)
+        
         obs_all = []
 
         for a_elem in self.nrcs_elems:
@@ -545,6 +547,7 @@ class NrcsObsIO(ObsIO):
     _avail_elems = ['tmin', 'tmax', 'prcp', 'snwd', 'swe', 'tdew', 'tdewmin',
                     'tdewmax', 'vpd', 'vpdmin', 'vpdmax', 'rh', 'rhmin', 'rhmax']
     _requires_local = False
+    name = "NRCS"
     
     _MIN_HRLY_FOR_DLY_DFLT = {'tdew': 4, 'tdewmin': 18, 'tdewmax': 18,
                               'vpd':18, 'vpdmin':18, 'vpdmax':18,

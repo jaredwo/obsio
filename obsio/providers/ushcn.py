@@ -44,6 +44,8 @@ class UshcnObsIO(ObsIO):
                     'prcp_mth_raw', 'prcp_mth_tob', 'prcp_mth_fls']
 
     _requires_local = True
+    
+    name = "USHCN"
 
     def __init__(self, local_data_path=None, download_updates=True, **kwargs):
 

@@ -397,6 +397,7 @@ class WrccRawsObsIO(ObsIO):
                     'vpdmin','vpdmax', 'rh', 'rhmin', 'rhmax', 'prcp', 'srad',
                     'wspd']
     _requires_local = False
+    name = "RAWS"
     _MIN_HRLY_FOR_DLY_DFLT = {'tdew':4, 'tdewmin':18, 'tdewmax':18, 'vpd':18,
                               'vpdmin':18, 'vpdmax':18}
     
@@ -422,7 +423,7 @@ class WrccRawsObsIO(ObsIO):
 
                 self.min_hrly_for_dly[
                     a_elem] = self._MIN_HRLY_FOR_DLY_DFLT[a_elem]
-
+                    
     def _read_stns(self):
         
         fpath_stns = os.path.join(os.path.dirname(__file__), 'data',
@@ -465,12 +466,26 @@ class WrccRawsObsIO(ObsIO):
         def get_start_end(stn_id):
         
             if self.has_start_end_dates:
-                start_date = self.start_date
+                
+                # Start date can't be < start date of station or the web form
+                # will return no data
+                start_date_stn = self.stns.loc[stn_id].start_date
+                if self.start_date < start_date_stn:
+                    
+                    start_date = start_date_stn
+                    
                 end_date = self.end_date
+                
+                # Make sure start_date is not > end_date
+                if start_date > end_date:
+                    
+                    start_date = end_date
+                                    
             else:
+                
                 start_date = self.stns.loc[stn_id].start_date
-                #Use current date for end date since end_date metadata
-                #might not be up-to-date
+                # Use current date for end date since end_date metadata
+                # might not be up-to-date
                 end_date = pd.Timestamp.now()
                 
             return start_date, end_date
