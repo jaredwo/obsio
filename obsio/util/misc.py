@@ -9,6 +9,8 @@ from gzip import GzipFile
 from time import sleep
 from datetime import datetime
 import os
+import sys
+import time
 
 # tzwhere currently sets log level to debug when imported
 # get log level before import and then reset log level to this
@@ -339,3 +341,38 @@ def download_if_new_ftp(a_ftp, fpath_ftp, fpath_local):
         downloaded_file = True
         
     return downloaded_file
+
+
+class StatusCheck(object):
+    '''
+    classdocs
+    '''
+
+
+    def __init__(self, total_cnt, check_cnt):
+        '''
+        Constructor
+        '''
+        self.total_cnt = total_cnt
+        self.check_cnt = check_cnt
+        self.num = 0 
+        self.num_last_check = 0
+        self.status_time = time.time()
+        self.start_time = self.status_time
+    
+    def increment(self, n=1):
+        self.num += n
+        if self.num - self.num_last_check >= self.check_cnt:
+            currentTime = time.time()
+            
+            if self.total_cnt != -1:
+                print "Total items processed is %d.  Last %d items took %f minutes. %d items to go." % (self.num, self.num - self.num_last_check, (currentTime - self.status_time) / 60.0, self.total_cnt - self.num)
+                print "Current total process time: %f minutes" % ((currentTime - self.start_time) / 60.0)
+                print "Estimated Time Remaining: %f" % (((self.total_cnt - self.num) / float(self.num)) * ((currentTime - self.start_time) / 60.0))
+            
+            else:
+                print "Total items processed is %d.  Last %d items took %f minutes" % (self.num, self.num - self.num_last_check, (currentTime - self.status_time) / 60.0)
+                print "Current total process time: %f minutes" % ((currentTime - self.start_time) / 60.0)
+            sys.stdout.flush()
+            self.status_time = time.time()
+            self.num_last_check = self.num
