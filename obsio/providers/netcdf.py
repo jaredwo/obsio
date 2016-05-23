@@ -32,7 +32,12 @@ class NcObsIO(ObsIO):
         vnames = vnames[is_stn_var]
         
         stns = self.ds[list(vnames)].to_dataframe()
-        stns['station_id'] = stns.index 
+        stns['station_id'] = stns.index
+        stns['station_index'] = np.arange(len(stns))
+        
+        # Make sure all object columns are str and not unicode
+        stns.loc[:, stns.dtypes == object] = stns.loc[:, stns.dtypes == object].astype(np.str) 
+        stns = stns.set_index('station_id', drop=False)
 
         return stns
         

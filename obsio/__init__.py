@@ -11,3 +11,4 @@ from .util.misc import BBox
 from .providers.generic import ObsIO
 from .providers.hdf import HdfObsIO
 from .providers.multi import MultiObsIO
+from .providers.netcdf import NcObsIO
