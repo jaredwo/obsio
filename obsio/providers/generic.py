@@ -1,8 +1,9 @@
-import numpy as np
-import pandas as pd
-import xray
 from ..util.misc import StatusCheck
 import netCDF4 as nc
+import numpy as np
+import os
+import pandas as pd
+import xray
 
 
 class ObsIO(object):
@@ -256,7 +257,53 @@ class ObsIO(object):
         store.create_table_index('obs', columns=['time'], optlevel=9, kind='full')
         
         store.close()
+    
+    
+    def to_csv(self, path_out, stn_ids, chk_rw, verbose=True):
+        """Write observations to CSV files
         
+        Writes out a station metadata CSV (stns.csv) and an observation
+        CSV for each station.
+        
+        Parameters
+        ----------
+        path_out : str
+            Path for output CSVs
+        stn_ids : list of str
+            The station ids for which to write observations
+        chk_rw : int
+            The chunk size in number of stations for which to read observations
+            into memory and output. For example, a chunk size
+            of 50 will read and write observations from 50 stations at a time.
+        verbose : boolean, optional
+            Print out progress messages. Default: True.
+        """
+        
+        stns = self.stns.loc[stn_ids]
+        stns.drop(['station_id'], axis=1).to_csv(os.path.join(path_out, 'stns.csv'))
+                
+        if verbose:
+            schk = StatusCheck(len(stn_ids),chk_rw)
+        
+        for i in np.arange(len(stn_ids),step=chk_rw):
+                        
+            obs = self.read_obs(stn_ids[i:(i+chk_rw)], 'tidy')
+            
+            ids_out = obs.index.levels[0].values
+            
+            for a_id in ids_out:
+                
+                obs_stn = obs.xs(a_id, level='station_id')
+                obs_stn = obs_stn.dropna(axis=1, how='all')
+                obs_stn = obs_stn.reindex(pd.date_range(obs_stn.index.min(),
+                                                        obs_stn.index.max()))
+                obs_stn.index.name = 'time'
+                obs_stn.to_csv(os.path.join(path_out, 'obs_%s.csv'%a_id))
+                
+            if verbose:
+                schk.increment(chk_rw)
+                
+    
     def to_netcdf(self, fpath, stn_ids, start_date, end_date, chk_rw,
                   verbose=True):
         """Write observations to a netCDF file
