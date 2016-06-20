@@ -40,7 +40,7 @@ class UshcnObsIO(ObsIO):
 
     _avail_elems = ['tmin_mth_raw', 'tmin_mth_tob', 'tmin_mth_fls',
                     'tmax_mth_raw', 'tmax_mth_tob', 'tmax_mth_fls',
-                    'tavg_mth_raw', 'tavg_mth_tob', 'tavg_mth_fls'
+                    'tavg_mth_raw', 'tavg_mth_tob', 'tavg_mth_fls',
                     'prcp_mth_raw', 'prcp_mth_tob', 'prcp_mth_fls']
 
     _requires_local = True
