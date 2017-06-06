@@ -5,8 +5,11 @@ from suds.client import Client
 from time import sleep
 import numpy as np
 import pandas as pd
+from suds.transport.https import HttpAuthenticated
+import ssl
+from urllib2 import HTTPSHandler, URLError
 
-_URL_AWDB_WSDL = 'http://www.wcc.nrcs.usda.gov/awdbWebService/services?WSDL'
+_URL_AWDB_WSDL = 'https://www.wcc.nrcs.usda.gov/awdbWebService/services?WSDL'
 
 # Daily NRCS elements to download for each obsio element
 _ELEMS_TO_NRCS_DAILY = {'tmin': ['TMIN'],
@@ -542,6 +545,26 @@ class _NrcsDaily():
 
         return obs_all
 
+class _CustomTransport(HttpAuthenticated):
+    '''
+    SSL Error workaround
+    https://stackoverflow.com/questions/37327368/bypass-ssl-when-im-using-suds-for-consume-web-service
+    '''
+
+    def u2handlers(self):
+
+        # use handlers from superclass
+        handlers = HttpAuthenticated.u2handlers(self)
+
+        # create custom ssl context, e.g.:
+        ctx = ssl._create_unverified_context()
+        # configure context as needed...
+        ctx.check_hostname = False
+
+        # add a https handler using the custom context
+        handlers.append(HTTPSHandler(context=ctx))
+        return handlers
+
 class NrcsObsIO(ObsIO):
 
     _avail_elems = ['tmin', 'tmax', 'prcp', 'snwd', 'swe', 'tdew', 'tdewmin',
@@ -583,7 +606,21 @@ class NrcsObsIO(ObsIO):
         self._elems_nrcs_all = list(np.unique(self._elems_nrcs_hrly + 
                                               self._elems_nrcs_dly))
         
-        self._client = Client(_URL_AWDB_WSDL)
+        
+        try:
+            self._client = Client(_URL_AWDB_WSDL)
+        except URLError as e:
+            if type(e.reason) == ssl.SSLError:
+                # Since www.wcc.nrcs.usda.gov switched to SSL, SSL verification
+                # errors have to started to be raised. This is possibly due to 
+                # SSL chain issue: 
+                # https://www.ssllabs.com/ssltest/analyze.html?d=www.wcc.nrcs.usda.gov
+                # For now, warn user and connect without verification
+                print "Warning: SSL Error connecting to AWDB web service. Skipping verification..."
+                self._client = Client(_URL_AWDB_WSDL, transport=_CustomTransport())
+            else:
+                raise
+            
         self._stnmeta_attrs = (self._client.factory.
                                create('stationMetaData').__keylist__)
         
