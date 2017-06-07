@@ -3,7 +3,7 @@ import netCDF4 as nc
 import numpy as np
 import os
 import pandas as pd
-import xray
+import xarray as xr
 
 
 class ObsIO(object):
@@ -169,7 +169,7 @@ class ObsIO(object):
             
             obs = obs.unstack(level=1)
             obs.columns = [col[1] for col in obs.columns.values]
-            obs = xray.Dataset.from_dataframe(obs.swaplevel(0,1))
+            obs = xr.Dataset.from_dataframe(obs.swaplevel(0,1))
             
             if stn_ids is None:
                 stns = self.stns
@@ -177,7 +177,7 @@ class ObsIO(object):
                 stns = self.stns.loc[stn_ids]
             
             #include station metadata
-            obs.merge(xray.Dataset.from_dataframe(stns), inplace=True)
+            obs.merge(xr.Dataset.from_dataframe(stns), inplace=True)
             
             return obs
         
@@ -209,7 +209,7 @@ class ObsIO(object):
         """
         
         store = pd.HDFStore(fpath, 'w', **kwargs) #complevel=5, complib='zlib')
-        stns = self.stns.loc[stn_ids]
+        stns = self.stns.loc[stn_ids].copy()
         # Make sure all object columns are str and not unicode
         stns.loc[:, stns.dtypes == object] = stns.loc[:, stns.dtypes == object].astype(np.str)
         stns.index = stns.index.astype(np.str)
