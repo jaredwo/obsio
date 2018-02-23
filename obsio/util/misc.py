@@ -2,9 +2,8 @@ import json
 import logging
 import numpy as np
 import urllib
-import urllib2
 import pycurl
-from StringIO import StringIO
+from io import BytesIO
 from gzip import GzipFile
 from time import sleep
 from datetime import datetime
@@ -65,9 +64,9 @@ class TimeZones():
 
         if TimeZones._tzw is None:
 
-            print "Initializing tzwhere for time zone retrieval...",
+            print("Initializing tzwhere for time zone retrieval..."),
             TimeZones._tzw = tzwhere(shapely=True, forceTZ=True)
-            print 'done.'
+            print('done.')
 
         return TimeZones._tzw
 
@@ -83,7 +82,7 @@ class TimeZones():
 
             df_stns_notz = df_stns[mask_tznull]
 
-            print "Getting timezone for %d stations..." % df_stns_notz.shape[0]
+            print("Getting timezone for %d stations..." % df_stns_notz.shape[0])
 
             tz_for_null = df_stns_notz.apply(lambda x:
                                              self.tzw.tzNameAt(x.latitude,
@@ -241,7 +240,7 @@ def open_remote_gz(url, maxtries=3):
     
         try:
             
-            buf = StringIO()
+            buf = BytesIO()
             c = pycurl.Curl()
             c.setopt(pycurl.URL, url)
             c.setopt(pycurl.WRITEDATA, buf)
@@ -271,7 +270,7 @@ def open_remote_file(url, maxtries=3):
     
         try:
     
-            buf = StringIO()
+            buf = BytesIO()
             c = pycurl.Curl()
             c.setopt(pycurl.URL, url)
             c.setopt(pycurl.WRITEDATA, buf)
@@ -333,7 +332,7 @@ def download_if_new_ftp(a_ftp, fpath_ftp, fpath_local):
     
     if (size_remote != size_local) or (mtime_remote > mtime_local):
         
-        print "Downloading %s to %s..."%(fpath_ftp, fpath_local)
+        print("Downloading %s to %s..."%(fpath_ftp, fpath_local))
         
         with open(fpath_local, 'wb') as f:
             a_ftp.retrbinary("RETR " + fpath_ftp, f.write)
@@ -366,13 +365,13 @@ class StatusCheck(object):
             currentTime = time.time()
             
             if self.total_cnt != -1:
-                print "Total items processed is %d.  Last %d items took %f minutes. %d items to go." % (self.num, self.num - self.num_last_check, (currentTime - self.status_time) / 60.0, self.total_cnt - self.num)
-                print "Current total process time: %f minutes" % ((currentTime - self.start_time) / 60.0)
-                print "Estimated Time Remaining: %f" % (((self.total_cnt - self.num) / float(self.num)) * ((currentTime - self.start_time) / 60.0))
+                print("Total items processed is %d.  Last %d items took %f minutes. %d items to go." % (self.num, self.num - self.num_last_check, (currentTime - self.status_time) / 60.0, self.total_cnt - self.num))
+                print("Current total process time: %f minutes" % ((currentTime - self.start_time) / 60.0))
+                print("Estimated Time Remaining: %f" % (((self.total_cnt - self.num) / float(self.num)) * ((currentTime - self.start_time) / 60.0)))
             
             else:
-                print "Total items processed is %d.  Last %d items took %f minutes" % (self.num, self.num - self.num_last_check, (currentTime - self.status_time) / 60.0)
-                print "Current total process time: %f minutes" % ((currentTime - self.start_time) / 60.0)
+                print("Total items processed is %d.  Last %d items took %f minutes" % (self.num, self.num - self.num_last_check, (currentTime - self.status_time) / 60.0))
+                print("Current total process time: %f minutes" % ((currentTime - self.start_time) / 60.0))
             sys.stdout.flush()
             self.status_time = time.time()
             self.num_last_check = self.num
