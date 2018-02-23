@@ -5,7 +5,7 @@ from .providers.madis import MadisObsIO
 from .providers.nrcs import NrcsObsIO
 from .providers.ushcn import UshcnObsIO
 from .providers.wrcc import WrccRawsObsIO
-
+from .providers.uscrn import UscrnObsIO
 
 class ObsIoFactory(object):
     """Builds ObsIO objects for different observation data sources.
@@ -531,3 +531,8 @@ class ObsIoFactory(object):
                              min_hrly_for_dly=min_hrly_for_dly, elems=self.elems,
                              bbox=self.bbox, start_date=self.start_date,
                              end_date=self.end_date)
+
+    def create_obsio_hrly_uscrn(self):
+        
+        return UscrnObsIO(elems=self.elems, bbox=self.bbox,
+                          start_date=self.start_date, end_date=self.end_date)
