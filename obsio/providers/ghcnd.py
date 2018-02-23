@@ -144,7 +144,7 @@ def _parse_ghcnd_yrly(fpath, elems):
 
         return chk
         
-    print "Loading file %s..." % fpath
+    print("Loading file %s..." % fpath)
     
     reader = pd.read_csv(fpath, header=None, usecols=[0, 1, 2, 7], sep=',',
                          names=['station_id', 'time', 'elem', 'tobs'],
@@ -167,7 +167,6 @@ def _parse_ghcnd_stnmeta(fpath_stns, fpath_stninv, elems, start_end=None, bbox=N
                        names=['station_id', 'latitude', 'longitude',
                               'elevation', 'state', 'station_name',
                               'network_code', 'hcn_crn_flag'])
-    stns['station_name'] = stns.station_name.apply(unicode, errors='ignore')
     stns['provider'] = 'GHCND'
     stns['sub_provider'] = (stns.network_code.apply(lambda x: _NETWORK_CODE_TO_SUBPROVIDER[x]))
 
@@ -581,9 +580,9 @@ class GhcndObsIO(ObsIO):
         
     def _read_stns(self):
         
-        fbuf_stns = open_remote_file('http://www1.ncdc.noaa.gov/'
+        fbuf_stns = open_remote_file('https://www1.ncdc.noaa.gov/'
                                      'pub/data/ghcn/daily/ghcnd-stations.txt')
-        fbuf_stninv = open_remote_file('http://www1.ncdc.noaa.gov/'
+        fbuf_stninv = open_remote_file('https://www1.ncdc.noaa.gov/'
                                        'pub/data/ghcn/daily/ghcnd-inventory.txt')
         
         if self.has_start_end_dates:
