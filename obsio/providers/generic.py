@@ -240,7 +240,8 @@ class ObsIO(object):
                 erows = np.int(np.round(len(obs)*
                                         (len(stn_ids)/np.float(chk_rw))))
                 store.append('obs', obs, data_columns=['time'], index=False,
-                             expectedrows=erows)
+                             expectedrows=erows,
+                             min_itemsize={'index':stns.index.str.len().max()})
                 first_append = False
                 
             else:
@@ -251,7 +252,7 @@ class ObsIO(object):
                 schk.increment(chk_rw)
         
         if verbose:
-            print "Creating index..."          
+            print("Creating index...")          
     
         store.create_table_index('obs', optlevel=9, kind='full')
         store.create_table_index('obs', columns=['time'], optlevel=9, kind='full')
