@@ -3,13 +3,12 @@ from ..util.humidity import convert_rh_to_tdew, calc_pressure, \
     convert_tdew_to_vpd, convert_rh_to_vpd, convert_tdew_to_rh
 from ..util.misc import TimeZones, uniquify
 from .generic import ObsIO
-from StringIO import StringIO
 from datetime import datetime, timedelta
+from io import StringIO
 from lxml.html import parse as html_parse
 from multiprocessing import Pool
 from pytz.exceptions import NonExistentTimeError, AmbiguousTimeError
 from time import sleep
-from urlparse import urlunsplit, urlsplit
 import errno
 import gzip
 import numpy as np
@@ -21,7 +20,8 @@ import string
 import subprocess
 import sys
 import tempfile
-import xray
+import urllib
+import xarray as xr
 
 _URL_BASE_MADIS = 'https://madis-data.ncep.noaa.gov/%s/data/'
 
@@ -84,11 +84,11 @@ def _madis_file_to_df(fpath, dly_elem, bbox, temp_path):
 
         return transform_func
 
-    print "Reading " + fpath
+    print("Reading " + fpath)
 
     try:
 
-        ds = xray.open_dataset(fpath, decode_cf=True,
+        ds = xr.open_dataset(fpath, decode_cf=True,
                                mask_and_scale=False,
                                concat_characters=True,
                                decode_times=False)
@@ -110,7 +110,7 @@ def _madis_file_to_df(fpath, dly_elem, bbox, temp_path):
             gzfile.close()
             tmpfile.close()
 
-            ds = xray.open_dataset(fpath_tmp, decode_cf=True,
+            ds = xr.open_dataset(fpath_tmp, decode_cf=True,
                                    mask_and_scale=False,
                                    concat_characters=True,
                                    decode_times=False)
@@ -134,7 +134,7 @@ def _madis_file_to_df(fpath, dly_elem, bbox, temp_path):
         is_empty = True
 
     if is_empty:
-        print "Warning: File does not appear to have any valid data: " + fpath
+        print("Warning: File does not appear to have any valid data: " + fpath)
 
     return df
 
@@ -1150,8 +1150,8 @@ def _to_dataframe_MADIS_METAR(ds, dly_elem, bbox=None):
                                  'longitude', 'elevation', 'timeObs'],
                                 dly_elem.vnames, ds.variables.keys())
 
-    ds = xray.Dataset(ds[vnames_ds])
-    ds = xray.decode_cf(ds)
+    ds = xr.Dataset(ds[vnames_ds])
+    ds = xr.decode_cf(ds)
 
     df = ds.to_dataframe()
     df.rename(columns={'stationName': 'station_id', 'timeObs':
@@ -1201,8 +1201,8 @@ def _to_dataframe_MADIS_SAO(ds, dly_elem, bbox=None):
                                  'longitude', 'elevation', 'timeObs'],
                                 dly_elem.vnames, ds.variables.keys())
 
-    ds = xray.Dataset(ds[vnames_ds])
-    ds = xray.decode_cf(ds)
+    ds = xr.Dataset(ds[vnames_ds])
+    ds = xr.decode_cf(ds)
 
     df = ds.to_dataframe()
     df.rename(columns={'stationName': 'station_id', 'timeObs': 'time'},
@@ -1254,7 +1254,7 @@ def _to_dataframe_MADIS_MESONET(ds, dly_elem, bbox=None):
                                  'observationTime'], dly_elem.vnames,
                                 ds.variables.keys())
 
-    ds = xray.Dataset(ds[vnames_ds])
+    ds = xr.Dataset(ds[vnames_ds])
 
     for a_var in ds.data_vars.values():
 
@@ -1263,7 +1263,7 @@ def _to_dataframe_MADIS_MESONET(ds, dly_elem, bbox=None):
         except KeyError:
             pass
 
-    ds = xray.decode_cf(ds)
+    ds = xr.decode_cf(ds)
 
     df = ds.to_dataframe()
     df['station_id'] = df['dataProvider'] + "_" + df['providerId']
@@ -1329,7 +1329,7 @@ def _to_dataframe_MADIS_COOP(ds, dly_elem, bbox=None):
                                  'observationTime'], dly_elem.vnames,
                                 ds.variables.keys())
 
-    ds = xray.Dataset(ds[vnames_ds])
+    ds = xr.Dataset(ds[vnames_ds])
 
     for a_var in ds.data_vars.values():
 
@@ -1338,7 +1338,7 @@ def _to_dataframe_MADIS_COOP(ds, dly_elem, bbox=None):
         except KeyError:
             pass
 
-    ds = xray.decode_cf(ds)
+    ds = xr.decode_cf(ds)
 
     df = ds.to_dataframe()
     df['station_id'] = df['dataProvider'] + "_" + df['providerId']
@@ -1539,7 +1539,7 @@ class MadisObsIO(ObsIO):
 
         if self._a_df_obs is None:
 
-            print "MadisObsIO: Reading in hourly MADIS netCDF files......"
+            print ("MadisObsIO: Reading in hourly MADIS netCDF files......")
 
             fpaths_fnd = self._fpaths_madis.fpath[self._fpaths_madis.exists]
             fpaths_miss = self._fpaths_madis.fpath[~self._fpaths_madis.exists]
@@ -1618,7 +1618,7 @@ class MadisObsIO(ObsIO):
             self._a_df_obs.set_index('time', inplace=True)
             self._dly_elem.convert_units(self._a_df_obs)
 
-            print 'done.'
+            print ('done.')
 
         return self._a_df_obs
 
@@ -1761,11 +1761,11 @@ class MadisObsIO(ObsIO):
                         sequence in sequences)
 
             schemes, netlocs, paths, queries, fragments = zip(
-                *(urlsplit(part) for part in parts))
+                *(urllib.parse.urlsplit(part) for part in parts))
             scheme, netloc, query, fragment = _first_of_each(
                 schemes, netlocs, queries, fragments)
             path = '/'.join(x.strip('/') for x in paths if x)
-            return urlunsplit((scheme, netloc, path, query, fragment))
+            return urllib.parse.urlunsplit((scheme, netloc, path, query, fragment))
 
         hrs_fnames = (self._utc_hrs.map(lambda x: x.
                                         strftime('%Y%m%d_%H%M.gz')).
@@ -1826,7 +1826,7 @@ class MadisObsIO(ObsIO):
 
         def _wget_madis_file(url, path_local, usrname, passwd):
 
-            print "WGET: Downloading %s to %s..." % (url, path_local)
+            print ("WGET: Downloading %s to %s..." % (url, path_local))
 
             if usrname and passwd:
 
@@ -1846,7 +1846,7 @@ class MadisObsIO(ObsIO):
                                                             a_dspath),
                                              self._username, self._password)
 
-            print "Processing downloads for %s" % a_dspath
+            print ("Processing downloads for %s" % a_dspath)
 
             for a_day, day_fnames in hrs_grpd:
 
