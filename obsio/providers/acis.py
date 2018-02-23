@@ -4,7 +4,6 @@ import json
 import numpy as np
 import pandas as pd
 import urllib
-import urllib2
 
 _URL_STN_META = 'http://data.rcc-acis.org/StnMeta'
 
@@ -86,7 +85,7 @@ class AcisObsIO(ObsIO):
 
     def _read_stns(self):
 
-        print "AcisObsIO: Getting station metadata..."
+        print("AcisObsIO: Getting station metadata...")
 
         input_dict = {'elems': self._elems_acis, "meta": ["name", "state", "sids",
                                                           "ll", "elev", "uid",
@@ -104,10 +103,9 @@ class AcisObsIO(ObsIO):
                                                               self.bbox.east,
                                                               self.bbox.north)
 
-        params = urllib.urlencode({'params': json.dumps(input_dict)})
-        req = urllib2.Request(
-            _URL_STN_META, params, {'Accept': 'application/json'})
-        response = urllib2.urlopen(req)
+        params = urllib.parse.urlencode({'params': json.dumps(input_dict)})
+        req = urllib.request.Request(_URL_STN_META, params, {'Accept': 'application/json'})
+        response = urllib.request.urlopen(req)
         json_str = response.read()
         json_dict = json.loads(json_str)['meta']
         df_stns = pd.DataFrame(json_dict)
@@ -248,10 +246,9 @@ class AcisObsIO(ObsIO):
                       'sdate': start_date, 'edate': end_date,
                       'elems': elem_dicts}
 
-        params = urllib.urlencode({'params': json.dumps(input_dict)})
-        req = urllib2.Request(_URL_MULTI_STN_DATA, params,
-                              {'Accept': 'application/json'})
-        response = urllib2.urlopen(req)
+        params = urllib.parse.urlencode({'params': json.dumps(input_dict)})
+        req = urllib.request.Request(_URL_MULTI_STN_DATA, params, {'Accept': 'application/json'})
+        response = urllib.request.urlopen(req)
         json_str = response.read()
         json_dict = json.loads(json_str)['data']
 
