@@ -2,15 +2,15 @@ from ..util.humidity import calc_pressure, convert_tdew_to_vpd, \
     convert_tdew_to_rh
 from ..util.misc import TimeZones, open_remote_file
 from .generic import ObsIO
-from StringIO import StringIO
 from ftplib import FTP
 from gzip import GzipFile
+from io import BytesIO
 from multiprocessing.pool import Pool
 from pytz.exceptions import NonExistentTimeError, AmbiguousTimeError
-from urlparse import urljoin
 import numpy as np
 import pandas as pd
 import sys
+import urllib
 
 _RPATH_ISD = 'ftp://ftp.ncdc.noaa.gov/pub/data/noaa/'
 _RPATH_ISD_LITE = 'ftp://ftp.ncdc.noaa.gov/pub/data/noaa/isd-lite/'
@@ -82,7 +82,7 @@ def _download_obs(args):
             
             try:
                         
-                fileobj = StringIO()
+                fileobj = BytesIO()
                 cmd_ftp = 'RETR pub/data/noaa/isd-lite/%d/%s-%d.gz'%(yr, stn_id, yr)
                 _download_obs.ftp.retrbinary(cmd_ftp, fileobj.write)
                 fileobj.seek(0)
@@ -197,7 +197,7 @@ def _download_obs(args):
 
     except Exception as e:
         
-        print "Error for station "+stn_id+": "+str(e)
+        print("Error for station "+stn_id+": "+str(e))
         
         
 
@@ -254,14 +254,13 @@ class IsdLiteObsIO(ObsIO):
 
     def _read_stns(self):
         
-        fstns = open_remote_file(urljoin(_RPATH_ISD, 'isd-history.csv'))
+        fstns = open_remote_file(urllib.parse.urljoin(_RPATH_ISD, 'isd-history.csv'))
 
         stns = pd.read_csv(fstns, dtype={'USAF': np.str, 'WBAN': np.str})
         stns['BEGIN'] = pd.to_datetime(stns.BEGIN, format="%Y%m%d")
         stns['END'] = pd.to_datetime(stns.END, format="%Y%m%d")
         stns['station_id'] = stns.USAF + "-" + stns.WBAN
-        stns['station_name'] = (stns['STATION NAME'].astype(np.str).
-                                apply(unicode, errors='ignore'))
+        stns['station_name'] = stns['STATION NAME'].astype(np.str)
         stns['provider'] = 'ISD-Lite'
         stns['sub_provider'] = 'WBAN'
         stns.loc[stns.WBAN == '99999', 'sub_provider'] = ''
