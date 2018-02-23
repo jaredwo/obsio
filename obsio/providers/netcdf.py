@@ -45,13 +45,13 @@ class NcObsIO(ObsIO):
         
         if stns_ids is None:
             
-            stns_ids = list(self.stns.station_id)
+            stns_ids = self.stns.station_id
         
         obs = []
         
         for aelem in self.elems:
             
-            obs_df = (pd.DataFrame(self.ds[aelem].loc[:, stns_ids].
+            obs_df = (pd.DataFrame(self.ds[aelem].loc[:, list(stns_ids)].
                                    to_pandas().stack(dropna=False)))
             obs_df['elem'] = aelem
             obs_df = obs_df.rename(columns={0:'obs_value'})
