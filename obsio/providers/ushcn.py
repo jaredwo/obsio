@@ -1,6 +1,6 @@
 from .. import LOCAL_DATA_PATH
 from .generic import ObsIO
-from StringIO import StringIO
+from io import StringIO
 import glob
 import itertools
 import numpy as np
@@ -96,8 +96,6 @@ class UshcnObsIO(ObsIO):
                                      (38, 40), (41, 71)], header=None,
                            names=['station_id', 'latitude', 'longitude',
                                   'elevation', 'state', 'station_name'])
-        stns['station_name'] = stns.station_name.apply(unicode,
-                                                       errors='ignore')
         stns['provider'] = 'USHCN'
         stns['sub_provider'] = ''
 
@@ -129,11 +127,11 @@ class UshcnObsIO(ObsIO):
 
         local_path = self.path_ushcn_data
 
-        print "Syncing USHCN data to local..."
+        print("Syncing USHCN data to local...")
         subprocess.call(['wget', '-N', '--directory-prefix=' + local_path,
                          _RPATH_USHCN])
 
-        print "Unzipping files..."
+        print("Unzipping files...")
 
         fnames_tars = glob.glob(os.path.join(local_path, '*.gz'))
 
