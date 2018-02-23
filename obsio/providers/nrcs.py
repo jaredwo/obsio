@@ -2,12 +2,13 @@ from ..util.humidity import convert_rh_to_tdew, convert_tdew_to_rh, \
     calc_pressure, convert_rh_to_vpd, convert_tdew_to_vpd
 from .generic import ObsIO
 from suds.client import Client
+from suds.transport.https import HttpAuthenticated
 from time import sleep
+from urllib.error import URLError
+from urllib.request import HTTPSHandler
 import numpy as np
 import pandas as pd
-from suds.transport.https import HttpAuthenticated
 import ssl
-from urllib2 import HTTPSHandler, URLError
 
 _URL_AWDB_WSDL = 'https://www.wcc.nrcs.usda.gov/awdbWebService/services?WSDL'
 
@@ -616,7 +617,7 @@ class NrcsObsIO(ObsIO):
                 # SSL chain issue: 
                 # https://www.ssllabs.com/ssltest/analyze.html?d=www.wcc.nrcs.usda.gov
                 # For now, warn user and connect without verification
-                print "Warning: SSL Error connecting to AWDB web service. Skipping verification..."
+                print("Warning: SSL Error connecting to AWDB web service. Skipping verification...")
                 self._client = Client(_URL_AWDB_WSDL, transport=_CustomTransport())
             else:
                 raise
@@ -650,7 +651,7 @@ class NrcsObsIO(ObsIO):
                                               networkCds=['SNTL', 'SCAN'],
                                               elementCds=self._elems_nrcs_all)
 
-        print "NrcsObsIO: Getting station metadata..."
+        print("NrcsObsIO: Getting station metadata...")
         stn_metas = _execute_awdb_call(self._client.service.
                                        getStationMetadataMultiple,
                                        stationTriplets=stn_triplets)
@@ -660,7 +661,7 @@ class NrcsObsIO(ObsIO):
 
         stns = df_stns.rename(columns={'actonId': 'station_id',
                                        'name': 'station_name'})
-        stns['station_id'] = stns.station_id.fillna(stns.shefId)
+        stns['station_id'] = stns.station_id.fillna(stns.stationTriplet)
         stns = stns[~stns.station_id.isnull()]
         stns['beginDate'] = pd.to_datetime(stns.beginDate)
         stns['endDate'] = pd.to_datetime(stns.endDate)
