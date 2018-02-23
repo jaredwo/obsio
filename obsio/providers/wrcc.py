@@ -1,16 +1,15 @@
 from ..util.humidity import calc_pressure, convert_rh_to_tdew, \
     convert_rh_to_vpd, convert_rh_to_vpd_daily
 from .generic import ObsIO
-from StringIO import StringIO
 from calendar import monthrange
 from datetime import datetime
+from io import StringIO
 from multiprocessing import Pool
 import numpy as np
 import os
 import pandas as pd
 import sys
 import urllib
-import urllib2
 
 _URL_RAWS_DLY_TIME_SERIES = "http://www.raws.dri.edu/cgi-bin/wea_dysimts.pl?"
 _URL_RAWS_DLY_TIME_SERIES2 = 'http://www.raws.dri.edu/cgi-bin/wea_dysimts2.pl'
@@ -48,10 +47,9 @@ def _parse_raws_metadata(stn_id):
         return decimal
     
     try:
+        
         stn_id = stn_id.strip()
-
-        response = urllib2.urlopen("".join([_URL_RAWS_DLY_TIME_SERIES,
-                                            stn_id]))
+        response = urllib.request.urlopen("".join([_URL_RAWS_DLY_TIME_SERIES, stn_id]))
         plines = response.readlines()
 
         start_date = None
@@ -81,7 +79,7 @@ def _parse_raws_metadata(stn_id):
                     end_date = end_date.replace(day=monthrange(end_date.year,
                                                                end_date.month)[1])
 
-        response = urllib2.urlopen("".join([_URL_RAWS_STN_METADATA, stn_id]))
+        response = urllib.request.urlopen("".join([_URL_RAWS_STN_METADATA, stn_id]))
         plines = response.readlines()
         lon, lat, elev = [None] * 3
 
@@ -102,7 +100,7 @@ def _parse_raws_metadata(stn_id):
                 
     except:
         
-        print "COULD NOT LOAD METADATA FOR: ", stn_id
+        print("COULD NOT LOAD METADATA FOR: ", stn_id)
         stn_meta = tuple([stn_id] + [None] * 6)
         
     return stn_meta
@@ -121,8 +119,8 @@ def _build_raws_stn_metadata(nprocs):
 
     for line in afile.readlines():
 
-        req = urllib2.Request(line.strip())
-        response = urllib2.urlopen(req)
+        req = urllib.request.Request(line.strip())
+        response = urllib.request.urlopen(req)
         plines = response.readlines()
         for pline in plines:
 
@@ -193,9 +191,9 @@ def _parse_raws_hrly_webform(stn_id, stn_pres, start_date, end_date, pwd,
               'WsHou': '00',
               'WeHou': '24'}
     
-    data = urllib.urlencode(values, doseq=True)
-    req = urllib2.Request(_URL_RAWS_HRLY_TIME_SERIES, data)
-    response = urllib2.urlopen(req)
+    data = urllib.parse.urlencode(values, doseq=True)
+    req = urllib.request.Request(_URL_RAWS_HRLY_TIME_SERIES, data)
+    response = urllib.request.urlopen(req)
     lines = response.readlines()
     
     try:
@@ -299,9 +297,9 @@ def _parse_raws_webform(args):
               'WeMon': '12',
               'WeDay': '31'}
 
-    data = urllib.urlencode(values)
-    req = urllib2.Request(_URL_RAWS_DLY_TIME_SERIES2, data)
-    response = urllib2.urlopen(req)
+    data = urllib.parse.urlencode(values)
+    req = urllib.request.Request(_URL_RAWS_DLY_TIME_SERIES2, data)
+    response = urllib.request.urlopen(req)
     lines = response.readlines()
     
     # skip first 7 lines
@@ -325,7 +323,7 @@ def _parse_raws_webform(args):
 
             except ValueError:
                 
-                print "RAWS: Error in parsing a observation for", stn_id
+                print("RAWS: Error in parsing a observation for", stn_id)
                 continue
 
             srad = float(vals[4])
@@ -433,7 +431,6 @@ class WrccRawsObsIO(ObsIO):
         stns['start_date'] = pd.to_datetime(stns.start_date)
         stns['end_date'] = pd.to_datetime(stns.end_date)
         stns['station_id'] = stns.station_id.str[2:]
-        stns['station_name'] = stns.station_name.apply(unicode, errors='ignore')
         stns['provider'] = 'WRCC'
         stns['sub_provider'] = 'RAWS'
 
