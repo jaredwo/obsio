@@ -3,7 +3,7 @@ import logging
 import numpy as np
 import urllib
 import pycurl
-from io import BytesIO
+from io import BytesIO, StringIO
 from gzip import GzipFile
 from time import sleep
 from datetime import datetime
@@ -289,6 +289,8 @@ def open_remote_file(url, maxtries=3):
                 raise
         
             sleep(1)
+    
+    buf = StringIO(buf.getvalue().decode('UTF-8'))
     
     return buf
 
