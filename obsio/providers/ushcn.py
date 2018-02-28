@@ -149,7 +149,7 @@ class UshcnObsIO(ObsIO):
                                            _ELEMS_TO_USHCN_VNAME[elem]))
         obs_file = self._obs_tarfiles[elem].extractfile(fname)
 
-        obs = pd.read_fwf(StringIO(obs_file.read()),
+        obs = pd.read_fwf(StringIO(obs_file.read().decode('utf-8')),
                           colspecs=[(12, 16), (17, 17 + 5), (26, 26 + 5),
                                     (35, 35 + 5), (44, 44 + 5), (53, 53 + 5),
                                     (62, 62 + 5), (71, 71 + 5), (80, 80 + 5),
