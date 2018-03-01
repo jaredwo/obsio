@@ -559,9 +559,7 @@ class GhcndBulkObsIO(ObsIO):
                         # but memory usage was too high
                     
                         for a_num in stnnums.index:
-                            
-                            print("Reading tobs data for %s"%stnnums.station_id.loc[a_num])
-                            
+                                                        
                             elem_tobs = store.select('df_tobs', select_str).reset_index()
                             elem_tobs['elem'] = elem
                             elem_tobs['station_id'] = stnnums.station_id.loc[a_num]
