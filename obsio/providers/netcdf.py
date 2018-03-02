@@ -26,7 +26,7 @@ class NcObsIO(ObsIO):
         
     def _read_stns(self):
         
-        vnames = np.array(self.ds.variables.keys()) 
+        vnames = np.array(list(self.ds.variables.keys())) 
         is_stn_var = np.array([self.ds[avar].dims==('station_id',)
                                for avar in vnames])
         vnames = vnames[is_stn_var]
@@ -35,7 +35,7 @@ class NcObsIO(ObsIO):
         stns['station_id'] = stns.index
         stns['station_index'] = np.arange(len(stns))
         
-        # Make sure all object columns are str and not unicode
+        # Make sure all object columns are str
         stns.loc[:, stns.dtypes == object] = stns.loc[:, stns.dtypes == object].astype(np.str) 
         stns = stns.set_index('station_id', drop=False)
 
