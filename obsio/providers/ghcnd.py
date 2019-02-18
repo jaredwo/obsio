@@ -315,13 +315,14 @@ def _build_tobs_hdfs(path_out, fpaths_yrly, elems, nprocs=1):
     store_stnnums.put('df_stnnums', stn_nums)
     store_stnnums.close()
     
-    # Create indexes
+    # Create indexess
     for elem in elems:
         
         with pd.HDFStore(os.path.join(path_out, '%s.hdf' % elem)) as store:
             
             store.create_table_index('df_tobs', optlevel=9, kind='full')
-            store.create_table_index('df_tobs', columns=['time'], optlevel=9, kind='full')
+            # store.create_table_index('df_tobs', columns=['time'], optlevel=9, kind='full')
+
     
     
 class GhcndBulkObsIO(ObsIO):
@@ -559,9 +560,7 @@ class GhcndBulkObsIO(ObsIO):
                         # but memory usage was too high
                     
                         for a_num in stnnums.index:
-                            
-                            print("Reading tobs data for %s"%stnnums.station_id.loc[a_num])
-                            
+
                             elem_tobs = store.select('df_tobs', select_str).reset_index()
                             elem_tobs['elem'] = elem
                             elem_tobs['station_id'] = stnnums.station_id.loc[a_num]
