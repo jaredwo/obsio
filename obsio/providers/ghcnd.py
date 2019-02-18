@@ -13,7 +13,7 @@ import tarfile
 _NETWORK_CODE_TO_SUBPROVIDER = {'0': '', '1': 'CoCoRaHS', 'C': 'COOP', 'E': 'ECA&D',
                                 'M': 'WMO', 'N': ('National Meteorological or '
                                                   'Hydrological Center'),
-                                'R': 'RAWS', 'S': 'SNOTEL', 'W': 'WBAN'}
+                                'R': 'RAWS', 'S': 'SNOTEL', 'W': 'WBAN', 'P': ''}
 _MISSING = -9999.0
 
 def _build_ghcnd_colspecs():
@@ -121,7 +121,7 @@ def _parse_ghcnd_dly_star(args):
 def _parse_ghcnd_dly_star_remote(args):
     
     args = list(args)
-    args[0] = open_remote_file('http://www1.ncdc.noaa.gov/'
+    args[0] = open_remote_file('https://www1.ncdc.noaa.gov/'
                                'pub/data/ghcn/daily/all/%s.dly' % args[1])
     args = tuple(args)
     
@@ -666,7 +666,7 @@ class GhcndObsIO(ObsIO):
     
                 for a_id in stns_obs.station_id:
                     
-                    abuf = open_remote_file('http://www1.ncdc.noaa.gov/'
+                    abuf = open_remote_file('https://www1.ncdc.noaa.gov/'
                                             'pub/data/ghcn/daily/all/%s.dly' % a_id)
                                        
                     obs_stn = _parse_ghcnd_dly(abuf, a_id, self.elems, start_end)
