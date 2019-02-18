@@ -215,6 +215,11 @@ def _build_tobs_hdfs(path_out, fpaths_yrly, elems, nprocs=1):
     stn_nums = pd.DataFrame([(np.nan, np.nan)], columns=['station_id', 'station_num'])
     num_inc = 0 
     
+    first_append = {elem:True for elem in elems}
+    
+    # assume ~1.5 millions rows per year to estimate expected number of rows
+    erows = 1500000 * len(fpaths_yrly)
+    
     def write_data(df_tobs, num_inc, stn_nums):
     
         hdfs = {elem:pd.HDFStore(os.path.join(path_out, '%s.hdf' % elem), 'a')
@@ -248,7 +253,15 @@ def _build_tobs_hdfs(path_out, fpaths_yrly, elems, nprocs=1):
                 # no observation for element
                 continue
             
-            hdfs[elem].append('df_tobs', grp, data_columns=['time'])
+            if first_append[elem]:
+                
+                hdfs[elem].append('df_tobs', grp, data_columns=['time'],
+                                  expectedrows=erows, index=False)
+                first_append[elem] = False
+            
+            else:
+            
+                hdfs[elem].append('df_tobs', grp, data_columns=['time'], index=False)
         
         for store in hdfs.values():
             store.close()
@@ -301,6 +314,15 @@ def _build_tobs_hdfs(path_out, fpaths_yrly, elems, nprocs=1):
     store_stnnums = pd.HDFStore(os.path.join(path_out, 'stn_nums.hdf'), 'w')
     store_stnnums.put('df_stnnums', stn_nums)
     store_stnnums.close()
+    
+    # Create indexes
+    for elem in elems:
+        
+        with pd.HDFStore(os.path.join(path_out, '%s.hdf' % elem)) as store:
+            
+            store.create_table_index('df_tobs', optlevel=9, kind='full')
+            store.create_table_index('df_tobs', columns=['time'], optlevel=9, kind='full')
+    
     
 class GhcndBulkObsIO(ObsIO):
 
@@ -537,6 +559,8 @@ class GhcndBulkObsIO(ObsIO):
                         # but memory usage was too high
                     
                         for a_num in stnnums.index:
+                            
+                            print("Reading tobs data for %s"%stnnums.station_id.loc[a_num])
                             
                             elem_tobs = store.select('df_tobs', select_str).reset_index()
                             elem_tobs['elem'] = elem
