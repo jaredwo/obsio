@@ -1,10 +1,4 @@
 from setuptools import setup, find_packages
-import sys
-
-#Check python version
-if sys.version_info.major > 2:
-    print "Sorry, Python 3 is not yet supported"
-    sys.exit(1)
 
 setup(name='obsio',
       version='0.1',
@@ -12,8 +6,7 @@ setup(name='obsio',
       description='Climate and weather observation IO',
       long_description=('obsio is Python package that provides a consistent generic '
                         'interface for accessing weather and climate observations '
-                        'from multiple different data providers. All station and '
-                        'observation data are returned using pandas data structures.'),    
+                        'from multiple different data providers.'),    
       author='Jared W. Oyler',
       author_email='jaredwo@gmail.com',
       license='GPL',
@@ -24,9 +17,9 @@ setup(name='obsio',
                    'Topic :: Scientific/Engineering :: Atmospheric Science',
                    'Topic :: Scientific/Engineering :: GIS',
                    'License :: OSI Approved :: GNU General Public License',
-                   'Programming Language :: Python :: 2',
-                   'Programming Language :: Python :: 2.7'],    
+                   'Programming Language :: Python :: 3'],    
       install_requires=['lxml', 'netCDF4', 'numpy', 'pandas', 'pycurl', 'pytz',
-                        'scipy', 'shapely', 'suds', 'tzwhere', 'xray'],
+                        'scipy', 'shapely', 'suds-py3', 'tzwhere', 'xarray'],
+      python_requires='>=3',
       package_data={'obsio.providers': ['data/*']} 
 )
