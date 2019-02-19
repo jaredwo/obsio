@@ -4,8 +4,8 @@ obsio
 
 **obsio** is an Python package that provides a consistent generic interface for
 accessing weather and climate observations from multiple different data 
-providers. All station and observation data are returned using pandas data
-structures. **obsio** is currently in pre-alpha stage and undergoing active development.
+providers. All station and observation data are returned using pandas or xarray
+data structures.
 
 Installation
 =============
@@ -18,35 +18,34 @@ Installation
 * pycurl_
 * pytz_
 * scipy_
-* suds_
+* suds-py3_
 * tzwhere_
-* xray_
+* xarray_
 
 The easiest method to install the required dependencies is with a combination
 of conda_ and pip_:
 
 ::
-
-	conda create -n obsio_env python=2 lxml ipython netCDF4 numpy pandas pycurl pytz scipy xray
-	pip install suds
+    conda create -n obsio_env python=3 lxml netCDF4 numpy pandas pycurl pytz scipy shapely xarray
+	pip install suds-py3
 	pip install tzwhere
 
 And then install obsio from source:
 
 ::
-
-	python setup.py install
+    git clone https://github.com/jaredwo/obsio.git
+	pip install obsio/
 
 .. _lxml: http://lxml.de/
-.. _netCDF4: https://github.com/Unidata/netcdf4-python
+.. _netcdf4: https://github.com/Unidata/netcdf4-python
 .. _numpy: http://www.numpy.org/
 .. _pandas: http://pandas.pydata.org/
 .. _pycurl: http://pycurl.sourceforge.net/
 .. _pytz: http://pythonhosted.org/pytz/
 .. _scipy: http://www.scipy.org/
-.. _suds: https://pypi.python.org/pypi/suds
+.. _suds-py3: https://pypi.python.org/pypi/suds-py3
 .. _tzwhere: https://pypi.python.org/pypi/tzwhere/
-.. _xray: http://xray.readthedocs.org/en/stable/
+.. _xarray: http://xarray.pydata.org
 .. _conda: http://conda.pydata.org/docs/
 .. _pip: https://pypi.python.org/pypi/pip
 
