@@ -26,6 +26,7 @@ The easiest method to install the required dependencies is with a combination
 of conda_ and pip_:
 
 ::
+
     conda create -n obsio_env python=3 lxml netCDF4 numpy pandas pycurl pytz scipy shapely xarray
 	pip install suds-py3
 	pip install tzwhere
@@ -33,6 +34,7 @@ of conda_ and pip_:
 And then install obsio from source:
 
 ::
+
     git clone https://github.com/jaredwo/obsio.git
 	pip install obsio/
 
