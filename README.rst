@@ -18,6 +18,7 @@ Installation
 * pycurl_
 * pytz_
 * scipy_
+* shapely_
 * suds-py3_
 * tzwhere_
 * xarray_
@@ -45,6 +46,7 @@ And then install obsio from source:
 .. _pycurl: http://pycurl.sourceforge.net/
 .. _pytz: http://pythonhosted.org/pytz/
 .. _scipy: http://www.scipy.org/
+.. _shapely: https://shapely.readthedocs.io/en/latest/
 .. _suds-py3: https://pypi.python.org/pypi/suds-py3
 .. _tzwhere: https://pypi.python.org/pypi/tzwhere/
 .. _xarray: http://xarray.pydata.org
