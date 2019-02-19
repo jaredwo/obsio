@@ -28,15 +28,15 @@ of conda_ and pip_:
 ::
 
     conda create -n obsio_env python=3 lxml netCDF4 numpy pandas pycurl pytz scipy shapely xarray
-	pip install suds-py3
-	pip install tzwhere
+    pip install suds-py3
+    pip install tzwhere
 
 And then install obsio from source:
 
 ::
 
     git clone https://github.com/jaredwo/obsio.git
-	pip install obsio/
+    pip install obsio/
 
 .. _lxml: http://lxml.de/
 .. _netcdf4: https://github.com/Unidata/netcdf4-python
