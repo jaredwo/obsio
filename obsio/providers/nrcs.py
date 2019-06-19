@@ -628,7 +628,7 @@ class NrcsObsIO(ObsIO):
         self._nrcs_dly = _NrcsDaily(self._client, self._elems_nrcs_dly)
         self._nrcs_hrly = _NrcsHourly(self._client, self._elems_nrcs_hrly)
         
-        self._elem_funcs = np.unique(np.array([_ELEM_EXTRACT_FUNCS[a_elem] for
+        self._elem_funcs = pd.unique(np.array([_ELEM_EXTRACT_FUNCS[a_elem] for
                                                a_elem in self.elems]))
 
     def _read_stns(self):
