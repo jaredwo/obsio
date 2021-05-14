@@ -386,6 +386,6 @@ class IsdLiteObsIO(ObsIO):
             pd.set_option('mode.chained_assignment', opt_val)
             
         obs_all = obs_all.set_index(['station_id', 'elem', 'time'])
-        obs_all = obs_all.sortlevel(0, sort_remaining=True)
+        obs_all = obs_all.sort_index(0, sort_remaining=True)
 
         return obs_all

@@ -161,7 +161,7 @@ class UshcnObsIO(ObsIO):
 
         obs_file.close()
 
-        obs = obs.unstack().swaplevel(0, 1).sortlevel(0, sort_remaining=True)
+        obs = obs.unstack().swaplevel(0, 1).sort_index(0, sort_remaining=True)
         obs = obs.reset_index()
         obs['time'] = pd.to_datetime(obs.year.astype(np.str) + obs.level_1,
                                      format='%Y%m')
@@ -207,6 +207,6 @@ class UshcnObsIO(ObsIO):
             pd.set_option('mode.chained_assignment', opt_val)
 
         obs = obs.set_index(['station_id', 'elem', 'time'])
-        obs = obs.sortlevel(0, sort_remaining=True)
+        obs = obs.sort_index(0, sort_remaining=True)
 
         return obs
