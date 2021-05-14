@@ -324,14 +324,11 @@ def download_if_new_ftp(a_ftp, fpath_ftp, fpath_local):
         mtime_local = datetime.utcfromtimestamp(os.path.getmtime(fpath_local))
         size_local = os.path.getsize(fpath_local)
     
-    except OSError as e:
+    except FileNotFoundError as e:
         
-        if e.args[-1] == 'No such file or directory':
-            mtime_local = None
-            size_local = None
-        else:
-            raise
-    
+        mtime_local = None
+        size_local = None
+
     if (size_remote != size_local) or (mtime_remote > mtime_local):
         
         print("Downloading %s to %s..."%(fpath_ftp, fpath_local))
