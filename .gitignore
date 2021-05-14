@@ -92,3 +92,5 @@ docs/_build/
 #Mac ignored files
 ####################
 .DS_Store
+
+.history/
