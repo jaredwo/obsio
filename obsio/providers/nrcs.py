@@ -501,7 +501,7 @@ class _NrcsDaily():
 
                 try:
                     obs_stn = pd.DataFrame(a_data.values, columns=['obs_value'])
-                    obs_stn['time'] = pd.date_range(a_data.beginDate, a_data.endDate)
+                    obs_stn['time'] = pd.date_range(a_data.beginDate.apply(repr), a_data.endDate.apply(repr))
                     obs_stn['stationTriplet'] = a_data.stationTriplet
                     obs_stn['obs_value'] = _convert_funcs[a_elem](obs_stn['obs_value'])
                     obs_stn['elem'] = a_elem
@@ -657,14 +657,15 @@ class NrcsObsIO(ObsIO):
                                        stationTriplets=stn_triplets)
 
         stn_tups = [self._stationMetadata_to_tuple(a) for a in stn_metas]
+        
         df_stns = pd.DataFrame(stn_tups, columns=self._stnmeta_attrs)
 
         stns = df_stns.rename(columns={'actonId': 'station_id',
                                        'name': 'station_name'})
         stns['station_id'] = stns.station_id.fillna(stns.stationTriplet)
         stns = stns[~stns.station_id.isnull()]
-        stns['beginDate'] = pd.to_datetime(stns.beginDate)
-        stns['endDate'] = pd.to_datetime(stns.endDate)
+        stns['beginDate'] = pd.to_datetime(stns.beginDate.apply(repr))
+        stns['endDate'] = pd.to_datetime(stns.endDate.apply(repr))
         stns['elevation'] = _ft_to_m(stns.elevation)
         stns['provider'] = 'NRCS'
         stns['sub_provider'] = ''
@@ -740,7 +741,7 @@ class NrcsObsIO(ObsIO):
 
         obs_merge = obs_merge.drop('stationTriplet', axis=1)
         obs_merge = obs_merge.set_index(['station_id', 'elem', 'time'])
-        obs_merge = obs_merge.sortlevel(0, sort_remaining=True)
+        obs_merge = obs_merge.sort_index(0, sort_remaining=True)
         return obs_merge
 
     def _stationMetadata_to_tuple(self, a_meta):

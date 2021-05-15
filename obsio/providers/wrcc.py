@@ -517,6 +517,6 @@ class WrccRawsObsIO(ObsIO):
             
         df_obs = pd.concat(obs, ignore_index=True)
         df_obs = df_obs.set_index(['station_id', 'elem', 'time'])
-        df_obs = df_obs.sortlevel(0, sort_remaining=True)
+        df_obs = df_obs.sort_index(0, sort_remaining=True)
 
         return df_obs

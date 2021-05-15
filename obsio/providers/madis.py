@@ -1744,7 +1744,7 @@ class MadisObsIO(ObsIO):
 
         all_obs = pd.concat(all_obs, ignore_index=True)
         all_obs = all_obs.set_index(['station_id', 'elem', 'time'])
-        all_obs = all_obs.sortlevel(0, sort_remaining=True)
+        all_obs = all_obs.sort_index(0, sort_remaining=True)
 
         return all_obs
 

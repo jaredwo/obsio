@@ -55,7 +55,7 @@ class HdfObsIO(ObsIO):
         obs.name = 'obs_value'
         obs.index.rename('elem', level=2, inplace=True)
         obs = obs.reorder_levels(['station_id', 'elem',
-                                  'time']).sortlevel(0, sort_remaining=True)
+                                  'time']).sort_index(0, sort_remaining=True)
         obs = pd.DataFrame(obs)
         
         return obs
